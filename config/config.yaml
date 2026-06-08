@@ -78,7 +78,7 @@ embeddings:
   device: "cuda"
 
 slurm:
-  partition_gpu: "a100-gpu,l40-gpu,v100-gpu"
+  partition_gpu: "a100-gpu,l40-gpu,volta-gpu,gpu"
   qos_gpu: "gpu_access"
   partition_cpu: "general"
   gpu_gres: "gpu:1"
