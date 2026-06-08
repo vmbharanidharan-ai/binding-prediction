@@ -13,7 +13,7 @@ HLA_ROOT = Path(__file__).resolve().parent
 
 
 def normalize_imgt_id(allele_id: str) -> str:
-    """IMGT headers use HLA-A*02:01:01:01; pipeline expects A*02:01:01:01."""
+    """Normalize allele IDs to A*02:01:01:01 style."""
     allele_id = allele_id.strip()
     if allele_id.startswith("HLA:"):
         allele_id = allele_id[4:]
@@ -21,6 +21,20 @@ def normalize_imgt_id(allele_id: str) -> str:
     if m:
         return f"{m.group(1).upper()}*{m.group(2)}"
     return allele_id
+
+
+def parse_header_allele(header_line: str) -> str:
+    """
+    Extract allele name from an IMGT FASTA header.
+
+    IMGT protein FASTA uses: >HLA:HLA00005 A*02:01:01:01 365 bp
+    """
+    tokens = header_line.strip().split()
+    if not tokens:
+        return ""
+    if len(tokens) >= 2 and "*" in tokens[1]:
+        return normalize_imgt_id(tokens[1])
+    return normalize_imgt_id(tokens[0])
 
 
 def parse_fasta(path: Path) -> dict[str, str]:
@@ -37,7 +51,7 @@ def parse_fasta(path: Path) -> dict[str, str]:
             if line.startswith(">"):
                 if header:
                     records[header] = "".join(seq_parts)
-                header = normalize_imgt_id(line[1:].split()[0])
+                header = parse_header_allele(line[1:])
                 seq_parts = []
             else:
                 seq_parts.append(line)
@@ -121,6 +135,11 @@ def main():
 
     index = build_index(raw)
     print(f"[INFO] Built index with {len(index)} lookup keys")
+    for probe in ("HLA_A0201", "A*02:01"):
+        if probe in index:
+            print(f"[INFO] Verified lookup key: {probe}")
+        else:
+            print(f"[WARN] Missing expected lookup key: {probe}")
 
     with open(out_path, "wb") as fh:
         pickle.dump(index, fh)
