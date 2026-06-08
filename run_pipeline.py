@@ -18,9 +18,10 @@ from utils.logging import setup_logger
 from utils.slurm_utils import (
     ensure_work_dirs,
     load_config,
-    read_last_checkpoint,
+    mark_step_complete,
     write_checkpoint,
 )
+from utils.step_summary import print_step_summary
 
 
 STEPS = [
@@ -42,19 +43,22 @@ def run_cmd(cmd: list, logger, dry_run: bool = False) -> None:
 
 
 def run_embeddings(config: dict, input_tsv: str, logger, dry_run: bool = False) -> None:
-    """Stage 0: ESM-2 + ProtT5 embeddings (always run, independent of structure)."""
+    """Stage 0: ESM-2 embeddings (+ optional ProtT5)."""
     emb_dir = config["paths"]["embeddings_dir"]
     esm2_out = f"{emb_dir}/esm2_embeddings.tsv"
-    prott5_out = f"{emb_dir}/prott5_embeddings.tsv"
 
     run_cmd(
         ["python", "embeddings/esm2_embeddings.py", "--input", input_tsv, "--output", esm2_out],
         logger, dry_run,
     )
-    run_cmd(
-        ["python", "embeddings/prott5_embeddings.py", "--input", input_tsv, "--output", prott5_out],
-        logger, dry_run,
-    )
+    if config["embeddings"].get("run_prott5", False):
+        prott5_out = f"{emb_dir}/prott5_embeddings.tsv"
+        run_cmd(
+            ["python", "embeddings/prott5_embeddings.py", "--input", input_tsv, "--output", prott5_out],
+            logger, dry_run,
+        )
+    else:
+        logger.info("Skipping ProtT5 (embeddings.run_prott5=false)")
 
 
 def run_step1(config: dict, input_tsv: str, logger, dry_run: bool = False) -> None:
@@ -202,7 +206,12 @@ def main():
         "--steps", nargs="+", choices=STEPS, default=STEPS,
         help="Pipeline steps to run",
     )
+    parser.add_argument(
+        "--step", choices=STEPS, default=None,
+        help="Run a single step (alias for --steps <step>)",
+    )
     parser.add_argument("--from-step", default=None, help="Resume from this step")
+    parser.add_argument("--no-summary", action="store_true", help="Skip output summary")
     parser.add_argument("--dry-run", action="store_true", help="Print commands only")
     parser.add_argument("--no-restart", action="store_true")
     args = parser.parse_args()
@@ -212,7 +221,7 @@ def main():
     logger = setup_logger("pipeline", config["paths"]["logs_dir"])
 
     checkpoint_path = f"{config['paths']['work_root']}/checkpoint.tsv"
-    steps_to_run = list(args.steps)
+    steps_to_run = [args.step] if args.step else list(args.steps)
 
     if args.from_step:
         idx = STEPS.index(args.from_step)
@@ -233,6 +242,9 @@ def main():
         try:
             step_fns[step]()
             write_checkpoint(checkpoint_path, step, "completed")
+            mark_step_complete(config["paths"]["work_root"], step)
+            if not args.dry_run and not args.no_summary:
+                print_step_summary(step, args.config)
         except Exception as e:
             write_checkpoint(checkpoint_path, step, f"failed: {e}")
             logger.error(f"Step {step} failed: {e}")

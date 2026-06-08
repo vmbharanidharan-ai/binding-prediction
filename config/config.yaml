@@ -18,47 +18,53 @@ paths:
   hla_fasta: "config/hla_sequences.fasta"
   iedb_reference: "data/iedb_reference.csv"
 
+# Runtime profile: optimized (default) balances speed vs quality.
+# Set profile: full to restore higher-accuracy settings.
+runtime:
+  profile: optimized
+
 step1:
-  num_models: 5
-  num_recycle: 3
-  seeds_per_peptide: 5
+  num_models: 3              # optimized: 3 (full: 5)
+  num_recycle: 1             # optimized: 1 (full: 3) — largest AF speed win
   colabfold_cmd: "colabfold_batch"
   use_templates: false
 
 step2:
   contact_distance_angstrom: 4.0
   rmsd_cluster_threshold: 2.0
-  top_structures_per_peptide: 3
+  top_structures_per_peptide: 1   # optimized: 1 (full: 3)
   min_cluster_size: 1
 
 step3:
   rfdiffusion_cmd: "python RFdiffusion/scripts/run_inference.py"
-  num_designs_per_structure: 10
+  num_designs_per_structure: 3    # optimized: 3 (full: 10)
   binder_length_min: 50
   binder_length_max: 80
-  diffusion_steps: 50
+  diffusion_steps: 25             # optimized: 25 (full: 50)
   rfdiffusion_weights: "${RFDIFFUSION_WEIGHTS:-/work/users/$USER/rfdiffusion_weights}"
 
 step4:
-  num_models: 5
-  num_recycle: 3
+  num_models: 3                # optimized: 3 (full: 5)
+  num_recycle: 1                 # optimized: 1 (full: 3)
+  max_complexes_per_peptide: 3   # cap multimer jobs per peptide (biggest pipeline speed win)
   colabfold_multimer_cmd: "colabfold_batch"
 
 step5:
   model_path: "step5_ml_model/model.pkl"
   pca_components: 50
-  train_test_split_by: "gene"  # gene or junction — prevents leakage
+  train_test_split_by: "gene"
   xgboost_params:
     objective: "rank:pairwise"
     eta: 0.1
     max_depth: 6
     subsample: 0.8
     colsample_bytree: 0.8
-    n_estimators: 200
+    n_estimators: 100            # optimized: 100 (full: 200)
 
 embeddings:
   esm2_model: "facebook/esm2_t33_650M_UR50D"
   prott5_model: "Rostlab/prot_t5_xl_half_uniref50-enc"
+  run_prott5: false              # optimized: false — ESM-2 only (saves ~1-2h GPU)
   batch_size: 8
   device: "cuda"
 

@@ -1,8 +1,6 @@
 """Parse ColabFold outputs into a structured TSV manifest."""
 
 import argparse
-from pathlib import Path
-
 import sys
 from pathlib import Path
 

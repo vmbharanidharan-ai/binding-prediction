@@ -35,6 +35,18 @@ def build_binder_complexes(
     hla_seqs = read_fasta(hla_fasta)
 
     merged = binders.merge(contigs, on="design_id", how="left")
+    max_per_peptide = config["step4"].get("max_complexes_per_peptide")
+    if max_per_peptide:
+        merged = (
+            merged.groupby("peptide", group_keys=False)
+            .head(max_per_peptide)
+            .reset_index(drop=True)
+        )
+        logger.info(
+            f"Capped complexes to {max_per_peptide} per peptide "
+            f"({len(merged)} total)"
+        )
+
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 

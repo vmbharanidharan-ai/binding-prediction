@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH --job-name=neo_step1
+#SBATCH --output=logs/step1_%j.out
+#SBATCH --error=logs/step1_%j.err
+#SBATCH --time=12:00:00
+#SBATCH --mem=64G
+#SBATCH --gres=gpu:1
+#SBATCH --partition=gpu
+#SBATCH --cpus-per-task=8
+
+# Step 1: Peptide–HLA structure generation (ColabFold)
+# Output: work/step1_structures/ and work/step2_scored/parsed_structures.tsv
+
+source "$(dirname "$0")/common.sh"
+
+echo "=== Step 1: Structure Generation ==="
+echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
+python run_pipeline.py --step step1 --input data/step5_input.tsv
+echo "=== Step 1 complete ==="

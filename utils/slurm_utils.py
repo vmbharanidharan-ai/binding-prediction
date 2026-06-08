@@ -85,3 +85,13 @@ def read_last_checkpoint(checkpoint_path: str) -> Optional[str]:
     if not lines:
         return None
     return lines[-1].strip().split("\t")[0]
+
+
+def mark_step_complete(work_root: str, step: str) -> Path:
+    """Write a completion flag so cluster runs can verify a step finished."""
+    flag = Path(work_root) / f"{step}_complete.flag"
+    flag.parent.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime, timezone
+
+    flag.write_text(f"completed\t{datetime.now(timezone.utc).isoformat()}\n")
+    return flag
