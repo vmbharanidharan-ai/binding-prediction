@@ -13,5 +13,5 @@
 source "$(dirname "$0")/common.sh"
 
 echo "=== Step 0: Embeddings ==="
-python run_pipeline.py --step embeddings --input data/step5_input.tsv
+python run_pipeline.py --step embeddings --input "$INPUT_TSV"
 echo "=== Step 0 complete ==="

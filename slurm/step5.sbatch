@@ -14,5 +14,5 @@
 source "$(dirname "$0")/common.sh"
 
 echo "=== Step 5: ML Ranking ==="
-python run_pipeline.py --step step5 --input data/step5_input.tsv
+python run_pipeline.py --step step5 --input "$INPUT_TSV"
 echo "=== Step 5 complete ==="

@@ -38,8 +38,16 @@ case "$STEP" in
 esac
 
 mkdir -p logs
+
+# Reuse input TSV saved from first interactive run
+if [[ -z "${INPUT_TSV:-}" && -f data/generated/current_pair.env ]]; then
+    # shellcheck source=/dev/null
+    source data/generated/current_pair.env
+fi
+export INPUT_TSV="${INPUT_TSV:-data/step5_input.tsv}"
+echo "Input TSV: $INPUT_TSV"
 echo "Submitting slurm/${JOB}.sbatch ..."
-sbatch "slurm/${JOB}.sbatch"
+sbatch --export=ALL "slurm/${JOB}.sbatch"
 echo ""
 echo "Monitor:  squeue -u \$USER"
 echo "Logs:     tail -f logs/${JOB}_*.out"

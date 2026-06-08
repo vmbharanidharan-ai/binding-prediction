@@ -8,7 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
-from utils.fasta_utils import normalize_allele_name, read_fasta, write_fasta
+from utils.fasta_utils import normalize_allele_name, write_fasta
+from utils.hla_helper import resolve_hla_sequence
 from utils.logging import setup_logger
 from utils.slurm_utils import filter_pending, get_completed_ids, load_config
 
@@ -28,7 +29,6 @@ def generate_colabfold_inputs(
     config = load_config(config_path)
     logger = setup_logger("step1_generate", config["paths"]["logs_dir"])
 
-    hla_seqs = read_fasta(hla_fasta)
     df = pd.read_csv(input_tsv, sep="\t")
     df["allele_norm"] = df["allele"].apply(normalize_allele_name)
     df["job_id"] = df.apply(
@@ -48,16 +48,17 @@ def generate_colabfold_inputs(
 
     manifest_rows = []
     for _, row in pending.iterrows():
-        allele_key = row["allele_norm"]
-        if allele_key not in hla_seqs:
-            logger.warning(f"HLA sequence not found for {allele_key}, skipping.")
+        resolved = resolve_hla_sequence(row["allele"], config)
+        if resolved is None:
+            logger.warning(f"HLA sequence not found for {row['allele']}, skipping.")
             continue
+        allele_key, hla_seq = resolved
 
         job_id = row["job_id"]
         fasta_path = out_path / f"{job_id}.fasta"
         records = [
             (f"peptide_{row['peptide']}", row["peptide"]),
-            (allele_key, hla_seqs[allele_key]),
+            (allele_key, hla_seq),
         ]
         write_fasta(records, str(fasta_path))
 

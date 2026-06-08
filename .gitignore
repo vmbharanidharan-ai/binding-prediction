@@ -1,5 +1,9 @@
 work/
 .venv/
+data/generated/*.tsv
+data/generated/current_pair.env
+hla/data/*.fasta
+hla/hla_index.pkl
 *.pyc
 __pycache__/
 .pytest_cache/

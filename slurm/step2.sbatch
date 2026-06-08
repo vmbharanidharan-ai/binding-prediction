@@ -13,5 +13,5 @@
 source "$(dirname "$0")/common.sh"
 
 echo "=== Step 2: Structure Scoring ==="
-python run_pipeline.py --step step2 --input data/step5_input.tsv
+python run_pipeline.py --step step2 --input "$INPUT_TSV"
 echo "=== Step 2 complete ==="

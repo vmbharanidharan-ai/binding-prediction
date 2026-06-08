@@ -15,8 +15,17 @@ paths:
   step5_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step5_ranked"
   embeddings_dir: "${NEO_BINDER_WORK_ROOT:-./work}/embeddings"
   logs_dir: "./logs"
-  hla_fasta: "config/hla_sequences.fasta"
+  hla_fasta: "config/hla_sequences.fasta"   # legacy fallback only
   iedb_reference: "data/iedb_reference.csv"
+
+hla:
+  use_imgt: true              # auto-download IMGT sequences (no manual FASTA needed)
+  auto_setup: true            # download + build index on first use
+  fallback_to_local_fasta: true
+  index_path: "hla/hla_index.pkl"
+  missing_allele_handling:
+    warn: true
+    skip_if_absent: true
 
 # Runtime profile: optimized (default) balances speed vs quality.
 # Set profile: full to restore higher-accuracy settings.

@@ -15,5 +15,5 @@ source "$(dirname "$0")/common.sh"
 
 echo "=== Step 1: Structure Generation ==="
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
-python run_pipeline.py --step step1 --input data/step5_input.tsv
+python run_pipeline.py --step step1 --input "$INPUT_TSV"
 echo "=== Step 1 complete ==="

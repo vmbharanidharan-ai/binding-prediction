@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 
 from utils.fasta_utils import read_fasta, write_fasta
+from utils.hla_helper import resolve_hla_sequence
 from utils.logging import setup_logger
 from utils.slurm_utils import load_config
 
@@ -32,8 +33,6 @@ def build_binder_complexes(
 
     binders = pd.read_csv(binder_designs_tsv, sep="\t")
     contigs = pd.read_csv(contig_manifest_tsv, sep="\t")
-    hla_seqs = read_fasta(hla_fasta)
-
     merged = binders.merge(contigs, on="design_id", how="left")
     max_per_peptide = config["step4"].get("max_complexes_per_peptide")
     if max_per_peptide:
@@ -54,14 +53,11 @@ def build_binder_complexes(
     for _, row in merged.iterrows():
         design_id = row["design_id"]
         peptide = row["peptide"]
-        allele = row["allele"].replace("HLA-", "HLA_").replace("*", "").replace(":", "")
-        if not allele.startswith("HLA_"):
-            allele = f"HLA_{allele}"
-
-        hla_seq = hla_seqs.get(allele, "")
-        if not hla_seq:
-            logger.warning(f"HLA sequence missing for {allele}")
+        resolved = resolve_hla_sequence(row["allele"], config)
+        if resolved is None:
+            logger.warning(f"HLA sequence missing for {row['allele']}")
             continue
+        allele_key, hla_seq = resolved
 
         binder_seq = ""
         if row.get("sequence_fasta") and Path(row["sequence_fasta"]).exists():
@@ -76,7 +72,7 @@ def build_binder_complexes(
         records = [
             (f"binder_{design_id}", binder_seq),
             (f"peptide_{peptide}", peptide),
-            (allele, hla_seq),
+            (allele_key, hla_seq),
         ]
         write_fasta(records, str(fasta_path))
 

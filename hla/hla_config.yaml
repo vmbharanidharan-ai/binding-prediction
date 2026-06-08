@@ -1,0 +1,24 @@
+imgt_version: "latest"
+imgt_base_url: "https://github.com/ANHIG/IMGTHLA/raw/Latest/fasta"
+
+# MHC class I protein FASTA files to download
+fasta_files:
+  - A_prot.fasta
+  - B_prot.fasta
+  - C_prot.fasta
+
+allowed_classes:
+  - HLA-A
+  - HLA-B
+  - HLA-C
+
+fallback_strategy: closest_match  # closest_match | error
+
+missing_allele_handling:
+  warn: true
+  skip_if_absent: true
+
+paths:
+  data_dir: "hla/data"
+  combined_fasta: "hla/data/imgt_hla_proteins.fasta"
+  index_path: "hla/hla_index.pkl"
