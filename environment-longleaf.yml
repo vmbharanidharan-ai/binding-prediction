@@ -1,0 +1,27 @@
+# Longleaf-compatible env — no pytorch-cuda (use module load cuda + pip torch)
+name: neo_binder
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - pip
+  - numpy>=1.24
+  - pandas>=2.0
+  - scipy>=1.11
+  - scikit-learn>=1.3
+  - pyyaml>=6.0
+  - biopython>=1.81
+  - freesasa>=2.2
+  - xgboost>=2.0
+  - joblib>=1.3
+  - tqdm>=4.66
+  - matplotlib>=3.8
+  - seaborn>=0.13
+  - pip:
+    - requests>=2.31
+    - transformers>=4.36
+    - fair-esm>=2.0
+    - sentencepiece>=0.1.99
+    - mdtraj>=1.9
+    - gemmi>=0.6
