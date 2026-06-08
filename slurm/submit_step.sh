@@ -46,6 +46,10 @@ if [[ -z "${INPUT_TSV:-}" && -f data/generated/current_pair.env ]]; then
 fi
 export INPUT_TSV="${INPUT_TSV:-data/step5_input.tsv}"
 echo "Input TSV: $INPUT_TSV"
+
+# Inherited SBATCH_* vars from the login shell can break submission on Longleaf.
+unset SBATCH_QOS SBATCH_ACCOUNT SBATCH_PARTITION SLURM_QOS 2>/dev/null || true
+
 echo "Submitting slurm/${JOB}.sbatch ..."
 sbatch --export=ALL "slurm/${JOB}.sbatch"
 echo ""

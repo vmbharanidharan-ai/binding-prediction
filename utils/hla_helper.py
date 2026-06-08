@@ -1,5 +1,7 @@
 """HLA sequence resolution for pipeline steps (IMGT index + legacy FASTA fallback)."""
 
+from __future__ import annotations
+
 import subprocess
 import sys
 from pathlib import Path

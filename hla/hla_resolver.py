@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Resolve HLA allele names to protein sequences via IMGT index."""
 
+from __future__ import annotations
+
 import argparse
 import pickle
 import re

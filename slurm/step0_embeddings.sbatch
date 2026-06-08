@@ -5,7 +5,8 @@
 #SBATCH --time=04:00:00
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:1
-#SBATCH --partition=gpu
+#SBATCH --partition=a100-gpu,l40-gpu,v100-gpu
+#SBATCH --qos=gpu_access
 #SBATCH --cpus-per-task=4
 
 # Step 0: ESM-2 embeddings (run before step5; can parallelize with step1)
