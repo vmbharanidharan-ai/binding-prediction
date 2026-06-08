@@ -9,6 +9,10 @@ conda activate neo_binder
 
 export NEO_BINDER_WORK_ROOT="${NEO_BINDER_WORK_ROOT:-/work/users/$USER/neo_binder}"
 export INPUT_TSV="${INPUT_TSV:-data/step5_input.tsv}"
+export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT:-}/alphafoldenv}"
+if [[ -d "${ALPHAFOLD_ENV}/bin" ]]; then
+    export PATH="${ALPHAFOLD_ENV}/bin:$PATH"
+fi
 mkdir -p logs "$NEO_BINDER_WORK_ROOT"
 
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"

@@ -1,6 +1,7 @@
 """SLURM job management and restart-safe execution utilities."""
 
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import List, Optional
@@ -9,12 +10,20 @@ import pandas as pd
 import yaml
 
 
+def expand_config_vars(raw: str) -> str:
+    """Expand ${VAR:-default} and $VAR placeholders in config YAML."""
+    def replace_default(match: re.Match[str]) -> str:
+        return os.environ.get(match.group(1), match.group(2))
+
+    expanded = re.sub(r"\$\{([^}:]+):-([^}]*)\}", replace_default, raw)
+    return os.path.expandvars(expanded)
+
+
 def load_config(config_path: str = "config/config.yaml") -> dict:
     """Load pipeline config, expanding environment variables in paths."""
     with open(config_path) as fh:
         raw = fh.read()
-    expanded = os.path.expandvars(raw)
-    return yaml.safe_load(expanded)
+    return yaml.safe_load(expand_config_vars(raw))
 
 
 def ensure_work_dirs(config: dict) -> None:
