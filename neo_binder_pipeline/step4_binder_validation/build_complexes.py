@@ -1,0 +1,105 @@
+"""Build binder + peptide–HLA complex FASTA inputs for AlphaFold-Multimer."""
+
+import argparse
+from pathlib import Path
+
+import pandas as pd
+
+from utils.fasta_utils import read_fasta, write_fasta
+from utils.logging import setup_logger
+from utils.slurm_utils import load_config
+
+
+def build_binder_complexes(
+    binder_designs_tsv: str,
+    contig_manifest_tsv: str,
+    output_dir: str,
+    hla_fasta: str,
+    config_path: str = "config/config.yaml",
+) -> pd.DataFrame:
+    """
+    Assemble FASTA inputs for binder + peptide + HLA multimer prediction.
+
+    Chain order: binder, peptide, HLA
+    """
+    config = load_config(config_path)
+    logger = setup_logger("step4_build", config["paths"]["logs_dir"])
+
+    binders = pd.read_csv(binder_designs_tsv, sep="\t")
+    contigs = pd.read_csv(contig_manifest_tsv, sep="\t")
+    hla_seqs = read_fasta(hla_fasta)
+
+    merged = binders.merge(contigs, on="design_id", how="left")
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    for _, row in merged.iterrows():
+        design_id = row["design_id"]
+        peptide = row["peptide"]
+        allele = row["allele"].replace("HLA-", "HLA_").replace("*", "").replace(":", "")
+        if not allele.startswith("HLA_"):
+            allele = f"HLA_{allele}"
+
+        hla_seq = hla_seqs.get(allele, "")
+        if not hla_seq:
+            logger.warning(f"HLA sequence missing for {allele}")
+            continue
+
+        binder_seq = ""
+        if row.get("sequence_fasta") and Path(row["sequence_fasta"]).exists():
+            fasta_records = read_fasta(row["sequence_fasta"])
+            binder_seq = next(iter(fasta_records.values()), "")
+
+        if not binder_seq:
+            binder_seq = "A" * row.get("binder_length", 65)
+
+        complex_id = f"{design_id}_complex"
+        fasta_path = out_path / f"{complex_id}.fasta"
+        records = [
+            (f"binder_{design_id}", binder_seq),
+            (f"peptide_{peptide}", peptide),
+            (allele, hla_seq),
+        ]
+        write_fasta(records, str(fasta_path))
+
+        rows.append(
+            {
+                "complex_id": complex_id,
+                "design_id": design_id,
+                "peptide": peptide,
+                "allele": row["allele"],
+                "fasta_path": str(fasta_path),
+                "binder_backbone": row.get("backbone_pdb", ""),
+                "target_pdb": row.get("pdb_path", ""),
+            }
+        )
+        logger.info(f"Built complex: {complex_id}")
+
+    manifest = pd.DataFrame(rows)
+    manifest_path = out_path / "complex_manifest.tsv"
+    manifest.to_csv(manifest_path, sep="\t", index=False)
+    logger.info(f"Complex manifest → {manifest_path} ({len(manifest)} entries)")
+    return manifest
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Build binder complexes")
+    parser.add_argument("--binders", required=True)
+    parser.add_argument("--contigs", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--config", default="config/config.yaml")
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+    build_binder_complexes(
+        args.binders,
+        args.contigs,
+        args.output_dir,
+        config["paths"]["hla_fasta"],
+        args.config,
+    )
+
+
+if __name__ == "__main__":
+    main()

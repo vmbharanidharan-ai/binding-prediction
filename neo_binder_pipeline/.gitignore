@@ -1,0 +1,12 @@
+work/
+.venv/
+*.pyc
+__pycache__/
+.pytest_cache/
+*.egg-info/
+.env
+.DS_Store
+logs/*.log
+logs/*.out
+logs/*.err
+!logs/.gitkeep

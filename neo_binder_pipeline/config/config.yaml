@@ -1,0 +1,92 @@
+# Neo Binder Pipeline — global configuration
+# Override paths for Longleaf: set NEO_BINDER_WORK_ROOT=/work/users/<onyen>
+
+project:
+  name: neo_binder_pipeline
+  version: "1.0.0"
+
+paths:
+  work_root: "${NEO_BINDER_WORK_ROOT:-./work}"
+  inputs_dir: "${NEO_BINDER_WORK_ROOT:-./work}/inputs"
+  step1_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step1_structures"
+  step2_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step2_scored"
+  step3_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step3_binders"
+  step4_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step4_validated"
+  step5_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step5_ranked"
+  embeddings_dir: "${NEO_BINDER_WORK_ROOT:-./work}/embeddings"
+  logs_dir: "./logs"
+  hla_fasta: "config/hla_sequences.fasta"
+  iedb_reference: "data/iedb_reference.csv"
+
+step1:
+  num_models: 5
+  num_recycle: 3
+  seeds_per_peptide: 5
+  colabfold_cmd: "colabfold_batch"
+  use_templates: false
+
+step2:
+  contact_distance_angstrom: 4.0
+  rmsd_cluster_threshold: 2.0
+  top_structures_per_peptide: 3
+  min_cluster_size: 1
+
+step3:
+  rfdiffusion_cmd: "python RFdiffusion/scripts/run_inference.py"
+  num_designs_per_structure: 10
+  binder_length_min: 50
+  binder_length_max: 80
+  diffusion_steps: 50
+  rfdiffusion_weights: "${RFDIFFUSION_WEIGHTS:-/work/users/$USER/rfdiffusion_weights}"
+
+step4:
+  num_models: 5
+  num_recycle: 3
+  colabfold_multimer_cmd: "colabfold_batch"
+
+step5:
+  model_path: "step5_ml_model/model.pkl"
+  pca_components: 50
+  train_test_split_by: "gene"  # gene or junction — prevents leakage
+  xgboost_params:
+    objective: "rank:pairwise"
+    eta: 0.1
+    max_depth: 6
+    subsample: 0.8
+    colsample_bytree: 0.8
+    n_estimators: 200
+
+embeddings:
+  esm2_model: "facebook/esm2_t33_650M_UR50D"
+  prott5_model: "Rostlab/prot_t5_xl_half_uniref50-enc"
+  batch_size: 8
+  device: "cuda"
+
+slurm:
+  partition_gpu: "gpu"
+  partition_cpu: "general"
+  gpu_gres: "gpu:1"
+  mem_gpu: "64G"
+  mem_cpu: "32G"
+  time_gpu: "24:00:00"
+  time_cpu: "12:00:00"
+  account: "${SLURM_ACCOUNT:-}"
+
+features:
+  core:
+    - mhcflurry_presentation_percentile
+    - netmhcpan_EL_rank
+    - n_carriers_in_cohort
+    - PSR_tumor
+    - frameshift_flag
+  structural:
+    - structure_confidence_score
+    - binder_structural_score
+    - interface_plddt_mean
+    - interface_pae_mean
+    - contact_count
+    - buried_surface_area
+  embedding:
+    - esm2_pca
+    - prott5_pca
+    - iedb_cosine_similarity_max
