@@ -12,6 +12,17 @@ import yaml
 HLA_ROOT = Path(__file__).resolve().parent
 
 
+def normalize_imgt_id(allele_id: str) -> str:
+    """IMGT headers use HLA-A*02:01:01:01; pipeline expects A*02:01:01:01."""
+    allele_id = allele_id.strip()
+    if allele_id.startswith("HLA:"):
+        allele_id = allele_id[4:]
+    m = re.match(r"^HLA-([ABC])\*(.+)$", allele_id, re.IGNORECASE)
+    if m:
+        return f"{m.group(1).upper()}*{m.group(2)}"
+    return allele_id
+
+
 def parse_fasta(path: Path) -> dict[str, str]:
     """Parse FASTA into {header_id: sequence}."""
     records: dict[str, str] = {}
@@ -26,8 +37,7 @@ def parse_fasta(path: Path) -> dict[str, str]:
             if line.startswith(">"):
                 if header:
                     records[header] = "".join(seq_parts)
-                header = line[1:].split()[0]
-                header = header.replace("HLA:", "")
+                header = normalize_imgt_id(line[1:].split()[0])
                 seq_parts = []
             else:
                 seq_parts.append(line)
