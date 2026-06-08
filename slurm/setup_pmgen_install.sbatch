@@ -19,6 +19,7 @@ set -euo pipefail
 module load cuda 2>/dev/null || true
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
+export REPO_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
 export PROJECT_ROOT="${PROJECT_ROOT:-/work/users/$USER/minibinder_prediction}"
 export PMGEN_ROOT="${PMGEN_ROOT:-$PROJECT_ROOT/PMGen}"
 
@@ -42,10 +43,10 @@ if conda env list | grep -q "^PMGen "; then
     conda env remove -n PMGen -y
 fi
 
-bash -l install.sh --no_modeller
+bash "$REPO_ROOT/scripts/install_pmgen_longleaf_gpu.sh"
 
 conda activate PMGen
-python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+python -c "import jax, torch; print('jax', jax.devices()); print('torch cuda', torch.cuda.is_available())"
 
 echo "=== PMGen install complete ==="
 echo "Finished: $(date)"
