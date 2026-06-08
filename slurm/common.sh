@@ -7,9 +7,11 @@ module load cuda 2>/dev/null || true
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate neo_binder
 
+export PROJECT_ROOT="${PROJECT_ROOT:-}"
 export NEO_BINDER_WORK_ROOT="${NEO_BINDER_WORK_ROOT:-/work/users/$USER/neo_binder}"
 export INPUT_TSV="${INPUT_TSV:-data/step5_input.tsv}"
-export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT:-}/alphafoldenv}"
+export PMGEN_ROOT="${PMGEN_ROOT:-${PROJECT_ROOT}/PMGen}"
+export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT}/alphafoldenv}"
 if [[ -d "${ALPHAFOLD_ENV}/bin" ]]; then
     export PATH="${ALPHAFOLD_ENV}/bin:$PATH"
 fi

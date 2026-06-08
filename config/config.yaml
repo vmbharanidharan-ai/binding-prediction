@@ -33,8 +33,17 @@ runtime:
   profile: optimized
 
 step1:
+  backend: pmgen            # pmgen | colabfold
   num_models: 3              # optimized: 3 (full: 5)
   num_recycle: 1             # optimized: 1 (full: 3) — largest AF speed win
+  # PMGen (Step 1 when backend=pmgen) — install via scripts/setup_pmgen_longleaf.sh
+  pmgen_root: "${PMGEN_ROOT:-}"
+  pmgen_env: "PMGen"
+  pmgen_run_mode: "single"   # single | parallel
+  pmgen_initial_guess: true  # recommended PMGen mode (fast, no homology modeling)
+  pmgen_no_netmhcpan: true
+  pmgen_models: ["model_1_ptm", "model_2_ptm", "model_3_ptm"]
+  # ColabFold (Step 1 when backend=colabfold; also used for Step 4 multimer)
   colabfold_cmd: "colabfold_batch"
   use_templates: false
 

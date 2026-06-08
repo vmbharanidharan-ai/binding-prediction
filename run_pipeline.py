@@ -62,29 +62,41 @@ def run_embeddings(config: dict, input_tsv: str, logger, dry_run: bool = False) 
 
 
 def run_step1(config: dict, input_tsv: str, logger, dry_run: bool = False) -> None:
-    """Stage 1: Peptide–HLA structure generation via ColabFold."""
+    """Stage 1: Peptide–HLA structure generation (PMGen or ColabFold)."""
     paths = config["paths"]
     inputs_dir = f"{paths['inputs_dir']}/step1"
     structures_dir = paths["step1_outputs"]
+    backend = config.get("step1", {}).get("backend", "colabfold").lower()
 
     run_cmd(
         ["python", "step1_structure_generation/generate_inputs.py",
          "--input", input_tsv, "--output-dir", inputs_dir],
         logger, dry_run,
     )
-    run_cmd(
-        ["python", "step1_structure_generation/run_colabfold.py",
-         "--manifest", f"{inputs_dir}/input_manifest.tsv",
-         "--output-dir", structures_dir],
-        logger, dry_run,
-    )
-    run_cmd(
-        ["python", "step1_structure_generation/parse_outputs.py",
-         "--structure-dir", structures_dir,
-         "--manifest", f"{inputs_dir}/input_manifest.tsv",
-         "--output", f"{paths['step2_outputs']}/parsed_structures.tsv"],
-        logger, dry_run,
-    )
+
+    if backend == "pmgen":
+        logger.info("Step 1 backend: PMGen")
+        run_cmd(
+            ["python", "step1_structure_generation/run_pmgen.py",
+             "--manifest", f"{inputs_dir}/input_manifest.tsv",
+             "--output-dir", structures_dir],
+            logger, dry_run,
+        )
+    else:
+        logger.info("Step 1 backend: ColabFold")
+        run_cmd(
+            ["python", "step1_structure_generation/run_colabfold.py",
+             "--manifest", f"{inputs_dir}/input_manifest.tsv",
+             "--output-dir", structures_dir],
+            logger, dry_run,
+        )
+        run_cmd(
+            ["python", "step1_structure_generation/parse_outputs.py",
+             "--structure-dir", structures_dir,
+             "--manifest", f"{inputs_dir}/input_manifest.tsv",
+             "--output", f"{paths['step2_outputs']}/parsed_structures.tsv"],
+            logger, dry_run,
+        )
 
 
 def run_step2(config: dict, logger, dry_run: bool = False) -> None:
