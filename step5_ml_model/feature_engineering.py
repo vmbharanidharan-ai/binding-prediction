@@ -36,6 +36,20 @@ STRUCTURAL_FEATURES = [
     "binder_contact_count",
 ]
 
+# Added after Step 2 post-ranking extras. Model retraining on real cohort data
+# is recommended once these features are validated on Longleaf.
+ROSETTA_FEATURES = [
+    "dG_separated",
+    "dSASA_int",
+    "delta_unsatHbonds",
+]
+
+MHCFLURRY_BA_FEATURES = [
+    "mhcflurry_ic50_log10",
+    "mhcflurry_affinity_percentile",
+    "mhcflurry_presentation_score",
+]
+
 
 def parse_embedding_column(series: pd.Series) -> np.ndarray:
     """Parse comma-separated embedding strings into a 2D array."""
@@ -46,6 +60,93 @@ def parse_embedding_column(series: pd.Series) -> np.ndarray:
         else:
             vectors.append(np.array([float(x) for x in str(val).split(",")]))
     return np.array(vectors)
+
+
+def _load_optional_pair_tsv(path: Path) -> pd.DataFrame | None:
+    if not path.exists():
+        return None
+    df = pd.read_csv(path, sep="\t")
+    if df.empty:
+        return None
+    return df
+
+
+def _drop_all_na_feature_columns(
+    df: pd.DataFrame,
+    columns: list[str],
+    logger,
+    label: str,
+) -> list[str]:
+    kept = []
+    for col in columns:
+        if col not in df.columns:
+            logger.warning(f"{label}: column {col} missing — skipping.")
+            continue
+        if df[col].isna().all():
+            logger.warning(f"{label}: column {col} is all NA — dropping from features.")
+            df.drop(columns=[col], inplace=True)
+            continue
+        kept.append(col)
+    return kept
+
+
+def merge_post_ranking_features(
+    df: pd.DataFrame,
+    work_root: Path,
+    logger,
+) -> pd.DataFrame:
+    """Merge Rosetta interface and MHCflurry BA TSVs produced after Step 2."""
+    if "job_id" not in df.columns:
+        df["job_id"] = df.apply(
+            lambda r: f"{r['peptide']}_{r['allele'].replace('HLA-', 'HLA_').replace('*', '').replace(':', '')}",
+            axis=1,
+        )
+
+    rosetta_rows = []
+    mhcflurry_rows = []
+    for pair_id in df["job_id"].astype(str).unique():
+        rosetta_path = work_root / "rosetta_interface" / f"{pair_id}_rosetta.tsv"
+        mhcflurry_path = work_root / "mhcflurry_ba" / f"{pair_id}_mhcflurry_ba.tsv"
+
+        rosetta_df = _load_optional_pair_tsv(rosetta_path)
+        if rosetta_df is not None:
+            rosetta_rows.append(rosetta_df)
+
+        mhcflurry_df = _load_optional_pair_tsv(mhcflurry_path)
+        if mhcflurry_df is not None:
+            if "mhcflurry_ic50_nm" in mhcflurry_df.columns:
+                mhcflurry_df = mhcflurry_df.copy()
+                mhcflurry_df["mhcflurry_ic50_log10"] = np.log10(
+                    mhcflurry_df["mhcflurry_ic50_nm"].fillna(0) + 1
+                )
+            mhcflurry_rows.append(mhcflurry_df)
+
+    if rosetta_rows:
+        rosetta_all = pd.concat(rosetta_rows, ignore_index=True)
+        rosetta_by_pair = rosetta_all.set_index("pair_id")
+        for col in ROSETTA_FEATURES:
+            if col in rosetta_by_pair.columns:
+                df[col] = df["job_id"].map(rosetta_by_pair[col])
+    else:
+        logger.warning("No Rosetta interface TSVs found under work/rosetta_interface/.")
+
+    if mhcflurry_rows:
+        mhcflurry_all = pd.concat(mhcflurry_rows, ignore_index=True)
+        mhcflurry_by_pair = mhcflurry_all.set_index("pair_id")
+        for col in MHCFLURRY_BA_FEATURES + ["mhcflurry_ic50_nm"]:
+            if col in mhcflurry_by_pair.columns:
+                df[col] = df["job_id"].map(mhcflurry_by_pair[col])
+    else:
+        logger.warning("No MHCflurry BA TSVs found under work/mhcflurry_ba/.")
+
+    for col in ROSETTA_FEATURES:
+        if col in df.columns:
+            df[col] = df[col].fillna(0)
+
+    _drop_all_na_feature_columns(df, ROSETTA_FEATURES, logger, "Rosetta")
+    _drop_all_na_feature_columns(df, MHCFLURRY_BA_FEATURES, logger, "MHCflurry BA")
+
+    return df
 
 
 def apply_pca(
@@ -117,6 +218,8 @@ def engineer_features(
         prott5_df = pd.read_csv(prott5_tsv, sep="\t")
         df = df.merge(prott5_df[["peptide", "prott5_embedding"]], on="peptide", how="left")
 
+    df = merge_post_ranking_features(df, Path(config["paths"]["work_root"]), logger)
+
     # PCA on ESM-2 embeddings
     if "esm2_embedding" in df.columns:
         esm2_matrix = parse_embedding_column(df["esm2_embedding"])
@@ -146,6 +249,8 @@ def get_feature_columns(df: pd.DataFrame) -> List[str]:
     """Return ordered list of numeric feature columns for ML."""
     cols = [c for c in CORE_FEATURES if c in df.columns]
     cols += [c for c in STRUCTURAL_FEATURES if c in df.columns]
+    cols += [c for c in ROSETTA_FEATURES if c in df.columns and not df[c].isna().all()]
+    cols += [c for c in MHCFLURRY_BA_FEATURES if c in df.columns and not df[c].isna().all()]
     cols += [c for c in df.columns if c.startswith("esm2_pca_")]
     cols += [c for c in df.columns if c.startswith("prott5_pca_")]
     if "iedb_cosine_similarity_max" in df.columns:

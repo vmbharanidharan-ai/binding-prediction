@@ -67,6 +67,15 @@ step4:
   max_complexes_per_peptide: 3   # cap multimer jobs per peptide (biggest pipeline speed win)
   colabfold_multimer_cmd: "colabfold_batch"
 
+rosetta:
+  bin_path: ""                 # e.g. /nas/longleaf/.../rosetta_scripts.default.linuxgccrelease
+  database_path: ""            # optional; uses Rosetta module default if empty
+  interface_string: "A_BC"     # HLA heavy=A, peptide=B, beta2m=C — verify on your PDBs
+  enabled: true                # set false to skip without code changes
+
+mhcflurry:
+  ba_mode: true                # enables IC50 output in addition to input percentile
+
 step5:
   model_path: "step5_ml_model/model.pkl"
   pca_components: 50
@@ -111,6 +120,12 @@ features:
     - interface_pae_mean
     - contact_count
     - buried_surface_area
+    - dG_separated
+    - dSASA_int
+    - delta_unsatHbonds
+    - mhcflurry_ic50_log10
+    - mhcflurry_affinity_percentile
+    - mhcflurry_presentation_score
   embedding:
     - esm2_pca
     - prott5_pca

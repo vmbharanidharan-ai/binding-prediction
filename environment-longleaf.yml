@@ -25,3 +25,4 @@ dependencies:
     - sentencepiece>=0.1.99
     - mdtraj>=1.9
     - gemmi>=0.6
+    - mhcflurry>=2.0

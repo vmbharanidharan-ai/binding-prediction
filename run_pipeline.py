@@ -116,12 +116,19 @@ def run_step2(config: dict, logger, dry_run: bool = False) -> None:
          "--output", f"{s2}/clustered_structures.tsv"],
         logger, dry_run,
     )
+    ranked_tsv = f"{s2}/ranked_structures.tsv"
     run_cmd(
         ["python", "step2_structure_scoring/rank_structures.py",
          "--input", f"{s2}/clustered_structures.tsv",
-         "--output", f"{s2}/ranked_structures.tsv"],
+         "--output", ranked_tsv],
         logger, dry_run,
     )
+    if not dry_run:
+        run_cmd(
+            ["python", "step2_structure_scoring/post_ranking_extras.py",
+             "--ranked", ranked_tsv],
+            logger, dry_run,
+        )
 
 
 def run_step3(config: dict, logger, dry_run: bool = False) -> None:
