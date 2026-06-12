@@ -37,9 +37,10 @@ def ensure_work_dirs(config: dict) -> None:
 
 def get_completed_ids(output_tsv: str, id_column: str = "job_id") -> set:
     """Return IDs already processed (for restart-safe execution)."""
-    if not Path(output_tsv).exists():
+    path = Path(output_tsv)
+    if not path.exists() or path.stat().st_size == 0:
         return set()
-    df = pd.read_csv(output_tsv, sep="\t")
+    df = pd.read_csv(path, sep="\t")
     if id_column not in df.columns:
         return set()
     return set(df[id_column].astype(str))

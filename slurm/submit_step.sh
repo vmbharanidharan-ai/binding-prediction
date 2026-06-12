@@ -45,7 +45,22 @@ if [[ -z "${INPUT_TSV:-}" && -f data/generated/current_pair.env ]]; then
     source data/generated/current_pair.env
 fi
 export INPUT_TSV="${INPUT_TSV:-data/step5_input.tsv}"
-echo "Input TSV: $INPUT_TSV"
+export PROJECT_ROOT="${PROJECT_ROOT:-}"
+if [[ -n "$PROJECT_ROOT" && -z "${NEO_BINDER_WORK_ROOT:-}" ]]; then
+    export NEO_BINDER_WORK_ROOT="$PROJECT_ROOT/work"
+fi
+export NEO_BINDER_WORK_ROOT="${NEO_BINDER_WORK_ROOT:-}"
+export PMGEN_ROOT="${PMGEN_ROOT:-${PROJECT_ROOT}/PMGen}"
+export RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"
+
+echo "Input TSV:  $INPUT_TSV"
+echo "Work root:  $NEO_BINDER_WORK_ROOT"
+echo "PMGen root: $PMGEN_ROOT"
+
+if [[ -z "$NEO_BINDER_WORK_ROOT" ]]; then
+    echo "ERROR: Set NEO_BINDER_WORK_ROOT or PROJECT_ROOT before submitting."
+    exit 1
+fi
 
 # Inherited SBATCH_* vars from the login shell can break submission on Longleaf.
 unset SBATCH_QOS SBATCH_ACCOUNT SBATCH_PARTITION SLURM_QOS 2>/dev/null || true

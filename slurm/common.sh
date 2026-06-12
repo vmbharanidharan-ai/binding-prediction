@@ -8,9 +8,13 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate neo_binder
 
 export PROJECT_ROOT="${PROJECT_ROOT:-}"
+if [[ -n "$PROJECT_ROOT" && -z "${NEO_BINDER_WORK_ROOT:-}" ]]; then
+    export NEO_BINDER_WORK_ROOT="$PROJECT_ROOT/work"
+fi
 export NEO_BINDER_WORK_ROOT="${NEO_BINDER_WORK_ROOT:-/work/users/$USER/neo_binder}"
 export INPUT_TSV="${INPUT_TSV:-data/step5_input.tsv}"
 export PMGEN_ROOT="${PMGEN_ROOT:-${PROJECT_ROOT}/PMGen}"
+export RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"
 export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT}/alphafoldenv}"
 if [[ -d "${ALPHAFOLD_ENV}/bin" ]]; then
     export PATH="${ALPHAFOLD_ENV}/bin:$PATH"
