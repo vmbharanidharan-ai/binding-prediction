@@ -62,7 +62,13 @@ if [[ $RESUME -eq 0 ]]; then
     cd ..
 
     echo "[official step] pandora-fetch..."
-    pandora-fetch
+    PANDORA_DB_ROOT="${PANDORA_DB_ROOT:-${PROJECT_ROOT:-$(dirname "$PMGEN_ROOT")}/PANDORA_databases/default}"
+    mkdir -p "$(dirname "$PANDORA_DB_ROOT")"
+    if [[ ! -f "${PANDORA_DB_ROOT}/database/PANDORA_database.pkl" ]]; then
+        pandora-fetch -d "$PANDORA_DB_ROOT"
+    else
+        echo "PANDORA database already at $PANDORA_DB_ROOT"
+    fi
 
     echo "[official step] Download AFfine weights..."
     AFFINE_ZIP_URL="https://owncloud.gwdg.de/index.php/s/M1YQOgKxLbVjO0G/download"
