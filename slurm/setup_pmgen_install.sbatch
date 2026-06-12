@@ -38,13 +38,14 @@ fi
 cd "$PMGEN_ROOT"
 
 # Clean partial env from a failed login-node attempt
-if conda env list | grep -q "^PMGen "; then
+if conda env list | awk '{print $1}' | grep -qx "PMGen"; then
     echo "Removing partial PMGen env before reinstall..."
     conda env remove -n PMGen -y
 fi
 
 bash "$REPO_ROOT/scripts/install_pmgen_longleaf_gpu.sh"
 
+source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate PMGen
 python -c "import jax, torch; print('jax', jax.devices()); print('torch cuda', torch.cuda.is_available())"
 
