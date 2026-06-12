@@ -1,5 +1,16 @@
 #!/bin/bash
-# Longleaf-compatible PMGen install (run on a GPU compute node).
+# Longleaf HPC port of official PMGen install.sh when `bash install.sh` fails.
+#
+# Replicates the upstream install.sh outcome on GPU nodes:
+#   - conda env: PMGen
+#   - pip install -e PANDORA  (import: PANDORA, pip name: CSB-PANDORA)
+#   - pandora-fetch
+#   - AFfine weights under AFfine/af_params/
+#   - ProteinMPNN clone
+#   - pip install -r pip_requirements.txt (JAX/CUDA for AlphaFold)
+#
+# Skips PMGen.yml / mamba env update (strict channel priority on Longleaf).
+# Run on a GPU compute node, not the login node.
 
 set -euo pipefail
 
@@ -9,15 +20,16 @@ cd "$PMGEN_ROOT"
 module load cuda 2>/dev/null || true
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
-echo "=== Longleaf PMGen install ==="
+echo "=== Longleaf PMGen install (official-equivalent) ==="
 echo "Host: $(hostname)"
 echo "PMGEN_ROOT: $PMGEN_ROOT"
-echo "Conda: $(conda info --base)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo N/A)"
 
 RESUME=0
-if conda env list | awk '{print $1}' | grep -qx "PMGen" && [[ -d AFfine/af_params ]]; then
-    echo "PMGen env + AFfine weights found — skipping package install (resume mode)."
+if conda env list | awk '{print $1}' | grep -qx "PMGen" \
+    && [[ -d AFfine/af_params ]] \
+    && python -c "import PANDORA" 2>/dev/null; then
+    echo "PMGen env + PANDORA + AFfine weights found — resume/verify mode."
     RESUME=1
     conda activate PMGen
 elif conda env list | awk '{print $1}' | grep -qx "PMGen"; then
@@ -26,34 +38,33 @@ elif conda env list | awk '{print $1}' | grep -qx "PMGen"; then
 fi
 
 if [[ $RESUME -eq 0 ]]; then
-    echo "Step 1/7: Creating PMGen env (python 3.9)..."
+    echo "[official step] Create conda env PMGen..."
     conda create -n PMGen python=3.9 pip -y --override-channels -c conda-forge
-
-    echo "Step 2/7: Activating PMGen..."
     conda activate PMGen
 
-    echo "Step 3/7: Installing core conda packages (conda-forge only)..."
+    echo "[official step] Base dependencies..."
     conda install -y --override-channels -c conda-forge \
         biopython pandas numpy scipy pyyaml requests tqdm matplotlib seaborn wget unzip git
 
-    echo "Step 4/7: Installing pip requirements (JAX CUDA + AFfine)..."
+    echo "[official step] pip install -r pip_requirements.txt (JAX/CUDA)..."
     pip install --upgrade pip "typing-extensions>=4.9"
     pip install -r pip_requirements.txt || {
-        echo "WARN: pip_requirements had conflicts — retrying with upgraded typing-extensions..."
+        echo "WARN: pip_requirements conflicts — retrying with typing-extensions fix..."
         pip install --upgrade "typing-extensions>=4.9"
         pip install -r pip_requirements.txt --no-deps
         pip install absl-py chex dm-haiku dm-tree flatbuffers jmp optax tabulate toolz protobuf urllib3 python-Levenshtein
     }
     pip install --upgrade "typing-extensions>=4.9"
 
-    echo "Step 5/7: Installing PANDORA..."
+    echo "[official step] pip install -e PANDORA..."
     cd PANDORA
     pip install -e .
     cd ..
 
-    echo "Step 6/7: Fetching PANDORA data + AFfine weights..."
+    echo "[official step] pandora-fetch..."
     pandora-fetch
 
+    echo "[official step] Download AFfine weights..."
     AFFINE_ZIP_URL="https://owncloud.gwdg.de/index.php/s/M1YQOgKxLbVjO0G/download"
     AFFINE_ZIP_NAME="AFfine/AFfine.zip"
     mkdir -p AFfine
@@ -62,15 +73,15 @@ if [[ $RESUME -eq 0 ]]; then
         unzip -o "$AFFINE_ZIP_NAME" -d AFfine
     fi
 
+    echo "[official step] Clone ProteinMPNN..."
     if [[ ! -d ProteinMPNN ]]; then
         git clone https://github.com/dauparas/ProteinMPNN.git
     fi
 else
-    echo "Steps 1–6 skipped (already installed)."
+    echo "Install steps skipped (already present)."
 fi
 
-echo "Step 7/7: Verifying GPU + JAX..."
-# module cuda sets LD_LIBRARY_PATH and breaks PMGen's pip jaxlib (cuda11) → exit 134.
+echo "[verify] PANDORA + JAX + GPU..."
 _SAVED_LD="${LD_LIBRARY_PATH:-}"
 unset LD_LIBRARY_PATH
 set +e
@@ -80,10 +91,13 @@ set -e
 export LD_LIBRARY_PATH="$_SAVED_LD"
 
 if [[ $VERIFY_RC -ne 0 ]]; then
-    echo "WARN: JAX GPU check exited $VERIFY_RC (often LD_LIBRARY_PATH vs pip jaxlib)."
-    echo "      PMGen packages/weights are installed. On GPU jobs use: source scripts/pmgen_env.sh"
+    echo "WARN: GPU verify exited $VERIFY_RC — use source scripts/pmgen_env.sh before running PMGen."
 else
-    echo "JAX GPU verification OK"
+    echo "GPU verify OK"
 fi
 
 echo "=== Longleaf PMGen install complete ==="
+echo "Run structure prediction (official CLI):"
+echo "  conda activate PMGen"
+echo "  cd $PMGEN_ROOT"
+echo "  python run_PMGen.py --mode wrapper --run single --df input.tsv --output_dir output/ --initial_guess"
