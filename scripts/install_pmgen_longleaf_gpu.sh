@@ -74,7 +74,7 @@ echo "Step 7/7: Verifying GPU + JAX..."
 _SAVED_LD="${LD_LIBRARY_PATH:-}"
 unset LD_LIBRARY_PATH
 set +e
-python -c "import jax; import torch; print('jax', jax.__version__); print('jax devices:', jax.devices()); print('torch cuda:', torch.cuda.is_available())"
+python -c "import PANDORA, jax, torch; print('PANDORA OK'); print('jax', jax.__version__); print('jax devices:', jax.devices()); print('torch cuda:', torch.cuda.is_available())"
 VERIFY_RC=$?
 set -e
 export LD_LIBRARY_PATH="$_SAVED_LD"
