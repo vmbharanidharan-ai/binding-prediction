@@ -43,7 +43,16 @@ if conda env list | awk '{print $1}' | grep -qx "PMGen"; then
     conda env remove -n PMGen -y
 fi
 
+set +e
 bash "$REPO_ROOT/scripts/install_pmgen_longleaf_gpu.sh"
+INSTALL_RC=$?
+set -e
+
+if [[ $INSTALL_RC -ne 0 ]]; then
+    echo "ERROR: install_pmgen_longleaf_gpu.sh failed with exit code $INSTALL_RC"
+    echo "Check logs/pmgen_install_${SLURM_JOB_ID}.out for details."
+    exit $INSTALL_RC
+fi
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate PMGen

@@ -1,6 +1,5 @@
 #!/bin/bash
 # Longleaf-compatible PMGen install (run on a GPU compute node).
-# Avoids PMGen-cpuonly.yml strict pins that fail on Longleaf.
 
 set -euo pipefail
 
@@ -10,44 +9,45 @@ cd "$PMGEN_ROOT"
 module load cuda 2>/dev/null || true
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
-CONDA_CMD="mamba"
-command -v mamba &>/dev/null || CONDA_CMD="conda"
-
 echo "=== Longleaf PMGen install ==="
 echo "Host: $(hostname)"
 echo "PMGEN_ROOT: $PMGEN_ROOT"
+echo "Conda: $(conda info --base)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo N/A)"
 
 if conda env list | awk '{print $1}' | grep -qx "PMGen"; then
     echo "Removing existing PMGen env..."
-    conda env remove -n PMGen -y
+    conda env remove -n PMGen -y || true
 fi
 
-echo "Creating minimal PMGen env (python 3.9)..."
-$CONDA_CMD create -n PMGen python=3.9 pip -y
+echo "Step 1/7: Creating PMGen env (python 3.9)..."
+conda create -n PMGen python=3.9 pip -y --override-channels -c conda-forge
 
+echo "Step 2/7: Activating PMGen..."
 conda activate PMGen
 
-echo "Installing conda dependencies..."
-$CONDA_CMD install -n PMGen -c conda-forge -c bioconda \
-    biopython pandas numpy scipy pyyaml requests tqdm matplotlib seaborn \
-    blast hmmer curl wget unzip git -y
+echo "Step 3/7: Installing core conda packages (conda-forge only)..."
+conda install -y --override-channels -c conda-forge \
+    biopython pandas numpy scipy pyyaml requests tqdm matplotlib seaborn wget unzip git
 
-echo "Installing pip requirements (JAX CUDA + AFfine deps)..."
+echo "Step 4/7: Installing pip requirements (JAX CUDA + AFfine)..."
 pip install --upgrade pip "typing-extensions>=4.9"
-pip install -r pip_requirements.txt
-# pip_requirements pins old typing-extensions; upgrade again for pyopenssl/multidict
+pip install -r pip_requirements.txt || {
+    echo "WARN: pip_requirements had conflicts — retrying with upgraded typing-extensions..."
+    pip install --upgrade "typing-extensions>=4.9"
+    pip install -r pip_requirements.txt --no-deps
+    pip install absl-py chex dm-haiku dm-tree flatbuffers jmp optax tabulate toolz protobuf urllib3 python-Levenshtein
+}
 pip install --upgrade "typing-extensions>=4.9"
 
-echo "Installing PANDORA..."
+echo "Step 5/7: Installing PANDORA..."
 cd PANDORA
 pip install -e .
 cd ..
 
-echo "Fetching PANDORA data..."
+echo "Step 6/7: Fetching PANDORA data + AFfine weights..."
 pandora-fetch
 
-echo "Downloading AFfine parameters..."
 AFFINE_ZIP_URL="https://owncloud.gwdg.de/index.php/s/M1YQOgKxLbVjO0G/download"
 AFFINE_ZIP_NAME="AFfine/AFfine.zip"
 mkdir -p AFfine
@@ -57,12 +57,10 @@ if [[ ! -d AFfine/af_params ]]; then
 fi
 
 if [[ ! -d ProteinMPNN ]]; then
-    echo "Cloning ProteinMPNN..."
     git clone https://github.com/dauparas/ProteinMPNN.git
-else
-    echo "ProteinMPNN already present — skipping clone."
 fi
 
+echo "Step 7/7: Verifying GPU + JAX..."
 python -c "import jax; import torch; print('jax devices:', jax.devices()); print('torch cuda:', torch.cuda.is_available())"
 
 echo "=== Longleaf PMGen install complete ==="
