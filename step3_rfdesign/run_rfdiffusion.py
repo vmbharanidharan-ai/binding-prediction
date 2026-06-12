@@ -1,9 +1,8 @@
 """Run RFdiffusion for minibinder scaffold generation."""
 
 import argparse
+import os
 import subprocess
-from pathlib import Path
-
 import sys
 from pathlib import Path
 
@@ -57,21 +56,39 @@ def run_rfdiffusion(
             continue
 
         job_out.mkdir(parents=True, exist_ok=True)
-        cmd = [
-            "python",
-            step_cfg["rfdiffusion_cmd"].split()[-1]
-            if " " in step_cfg["rfdiffusion_cmd"]
-            else step_cfg["rfdiffusion_cmd"],
+        rfdiff_root = os.environ.get(
+            "RFDIFFUSION_ROOT",
+            str(Path(__file__).resolve().parent.parent.parent / "RFdiffusion"),
+        )
+        weights_dir = step_cfg.get("rfdiffusion_weights") or os.environ.get(
+            "RFDIFFUSION_WEIGHTS", f"{rfdiff_root}/models"
+        )
+        hydra_args = [
             f"inference.input_pdb={row['pdb_path']}",
             f"inference.output_prefix={job_out / design_id}",
             f"contigmap.contigs=[{row['contig_map']}]",
             f"diffuser.T={step_cfg['diffusion_steps']}",
             f"inference.num_designs={step_cfg['num_designs_per_structure']}",
+            f"inference.model_directory_path={weights_dir}",
         ]
 
-        # Use full command if configured as a script path
-        if step_cfg["rfdiffusion_cmd"].startswith("python"):
-            cmd = step_cfg["rfdiffusion_cmd"].split() + cmd[2:]
+        repo_root = Path(__file__).resolve().parent.parent
+        rfdiff_env_sh = repo_root / "scripts" / "rfdiffusion_env.sh"
+        rfdiffusion_cmd = step_cfg["rfdiffusion_cmd"]
+        if rfdiffusion_cmd.strip().startswith("python "):
+            inference_invocation = rfdiffusion_cmd
+        else:
+            inference_script = Path(rfdiffusion_cmd)
+            if not inference_script.is_absolute():
+                inference_script = Path(rfdiff_root) / "scripts" / "run_inference.py"
+            inference_invocation = f"python {inference_script}"
+
+        bash_cmd = (
+            f"source {rfdiff_env_sh} && cd {rfdiff_root} && "
+            f"{inference_invocation} " + " ".join(hydra_args)
+            if rfdiff_env_sh.exists()
+            else f"cd {rfdiff_root} && {inference_invocation} " + " ".join(hydra_args)
+        )
 
         logger.info(f"Running RFdiffusion: {design_id}")
         if dry_run:
@@ -81,7 +98,7 @@ def run_rfdiffusion(
             continue
 
         try:
-            subprocess.run(cmd, check=True)
+            subprocess.run(["bash", "-lc", bash_cmd], check=True)
             (job_out / "done.flag").touch()
             status_rows.append(
                 {"design_id": design_id, "status": "completed", "output_dir": str(job_out)}

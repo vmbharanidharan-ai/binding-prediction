@@ -59,7 +59,7 @@ step3:
   binder_length_min: 50
   binder_length_max: 80
   diffusion_steps: 25             # optimized: 25 (full: 50)
-  rfdiffusion_weights: "${RFDIFFUSION_WEIGHTS:-/work/users/$USER/rfdiffusion_weights}"
+  rfdiffusion_weights: "${RFDIFFUSION_WEIGHTS:-${RFDIFFUSION_ROOT}/models}"
 
 step4:
   num_models: 3                # optimized: 3 (full: 5)
