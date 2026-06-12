@@ -42,8 +42,8 @@ if [[ $RESUME -eq 0 ]]; then
 
     echo "Step 3/6: Installing DGL (cu111 pip wheel) + hydra..."
     pip install --upgrade pip
-    pip install dgl -f https://data.dgl.ai/wheels/cu111/repo.html
-    pip install hydra-core pyrsistent
+    pip install "dgl==1.0.0+cu111" -f https://data.dgl.ai/wheels/cu111/repo.html
+    pip install hydra-core pyrsistent torchdata==0.9.0 "numpy<2"
 
     echo "Step 4/6: Installing NVIDIA SE3Transformer..."
     cd env/SE3Transformer
@@ -82,13 +82,26 @@ download_weight "http://files.ipd.uw.edu/pub/RFdiffusion/12fc204edeae5b57713c5ad
 _SAVED_LD="${LD_LIBRARY_PATH:-}"
 unset LD_LIBRARY_PATH
 set +e
-python -c "import torch, dgl; print('torch', torch.__version__, 'cuda', torch.cuda.is_available()); print('dgl', dgl.__version__)"
+python <<'PY'
+import traceback
+try:
+    import torch
+    import dgl
+    import rfdiffusion
+    print("torch", torch.__version__, "cuda", torch.cuda.is_available())
+    print("dgl", dgl.__version__)
+    print("rfdiffusion OK")
+except Exception:
+    traceback.print_exc()
+    raise SystemExit(1)
+PY
 VERIFY_RC=$?
 set -e
 export LD_LIBRARY_PATH="$_SAVED_LD"
 
 if [[ $VERIFY_RC -ne 0 ]]; then
-    echo "WARN: torch/dgl verify exited $VERIFY_RC (try: unset LD_LIBRARY_PATH before RFdiffusion runs)."
+    echo "WARN: verify exited $VERIFY_RC — try on GPU: source scripts/rfdiffusion_env.sh"
+    echo "      If DGL import failed: pip install dgl==1.0.0+cu111 -f https://data.dgl.ai/wheels/cu111/repo.html"
 fi
 
 echo "=== Longleaf RFdiffusion install complete ==="
