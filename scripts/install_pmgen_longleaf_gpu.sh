@@ -15,52 +15,75 @@ echo "PMGEN_ROOT: $PMGEN_ROOT"
 echo "Conda: $(conda info --base)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo N/A)"
 
-if conda env list | awk '{print $1}' | grep -qx "PMGen"; then
-    echo "Removing existing PMGen env..."
+RESUME=0
+if conda env list | awk '{print $1}' | grep -qx "PMGen" && [[ -d AFfine/af_params ]]; then
+    echo "PMGen env + AFfine weights found — skipping package install (resume mode)."
+    RESUME=1
+    conda activate PMGen
+elif conda env list | awk '{print $1}' | grep -qx "PMGen"; then
+    echo "Removing partial PMGen env..."
     conda env remove -n PMGen -y || true
 fi
 
-echo "Step 1/7: Creating PMGen env (python 3.9)..."
-conda create -n PMGen python=3.9 pip -y --override-channels -c conda-forge
+if [[ $RESUME -eq 0 ]]; then
+    echo "Step 1/7: Creating PMGen env (python 3.9)..."
+    conda create -n PMGen python=3.9 pip -y --override-channels -c conda-forge
 
-echo "Step 2/7: Activating PMGen..."
-conda activate PMGen
+    echo "Step 2/7: Activating PMGen..."
+    conda activate PMGen
 
-echo "Step 3/7: Installing core conda packages (conda-forge only)..."
-conda install -y --override-channels -c conda-forge \
-    biopython pandas numpy scipy pyyaml requests tqdm matplotlib seaborn wget unzip git
+    echo "Step 3/7: Installing core conda packages (conda-forge only)..."
+    conda install -y --override-channels -c conda-forge \
+        biopython pandas numpy scipy pyyaml requests tqdm matplotlib seaborn wget unzip git
 
-echo "Step 4/7: Installing pip requirements (JAX CUDA + AFfine)..."
-pip install --upgrade pip "typing-extensions>=4.9"
-pip install -r pip_requirements.txt || {
-    echo "WARN: pip_requirements had conflicts — retrying with upgraded typing-extensions..."
+    echo "Step 4/7: Installing pip requirements (JAX CUDA + AFfine)..."
+    pip install --upgrade pip "typing-extensions>=4.9"
+    pip install -r pip_requirements.txt || {
+        echo "WARN: pip_requirements had conflicts — retrying with upgraded typing-extensions..."
+        pip install --upgrade "typing-extensions>=4.9"
+        pip install -r pip_requirements.txt --no-deps
+        pip install absl-py chex dm-haiku dm-tree flatbuffers jmp optax tabulate toolz protobuf urllib3 python-Levenshtein
+    }
     pip install --upgrade "typing-extensions>=4.9"
-    pip install -r pip_requirements.txt --no-deps
-    pip install absl-py chex dm-haiku dm-tree flatbuffers jmp optax tabulate toolz protobuf urllib3 python-Levenshtein
-}
-pip install --upgrade "typing-extensions>=4.9"
 
-echo "Step 5/7: Installing PANDORA..."
-cd PANDORA
-pip install -e .
-cd ..
+    echo "Step 5/7: Installing PANDORA..."
+    cd PANDORA
+    pip install -e .
+    cd ..
 
-echo "Step 6/7: Fetching PANDORA data + AFfine weights..."
-pandora-fetch
+    echo "Step 6/7: Fetching PANDORA data + AFfine weights..."
+    pandora-fetch
 
-AFFINE_ZIP_URL="https://owncloud.gwdg.de/index.php/s/M1YQOgKxLbVjO0G/download"
-AFFINE_ZIP_NAME="AFfine/AFfine.zip"
-mkdir -p AFfine
-if [[ ! -d AFfine/af_params ]]; then
-    wget -O "$AFFINE_ZIP_NAME" "$AFFINE_ZIP_URL"
-    unzip -o "$AFFINE_ZIP_NAME" -d AFfine
-fi
+    AFFINE_ZIP_URL="https://owncloud.gwdg.de/index.php/s/M1YQOgKxLbVjO0G/download"
+    AFFINE_ZIP_NAME="AFfine/AFfine.zip"
+    mkdir -p AFfine
+    if [[ ! -d AFfine/af_params ]]; then
+        wget -O "$AFFINE_ZIP_NAME" "$AFFINE_ZIP_URL"
+        unzip -o "$AFFINE_ZIP_NAME" -d AFfine
+    fi
 
-if [[ ! -d ProteinMPNN ]]; then
-    git clone https://github.com/dauparas/ProteinMPNN.git
+    if [[ ! -d ProteinMPNN ]]; then
+        git clone https://github.com/dauparas/ProteinMPNN.git
+    fi
+else
+    echo "Steps 1–6 skipped (already installed)."
 fi
 
 echo "Step 7/7: Verifying GPU + JAX..."
-python -c "import jax; import torch; print('jax devices:', jax.devices()); print('torch cuda:', torch.cuda.is_available())"
+# module cuda sets LD_LIBRARY_PATH and breaks PMGen's pip jaxlib (cuda11) → exit 134.
+_SAVED_LD="${LD_LIBRARY_PATH:-}"
+unset LD_LIBRARY_PATH
+set +e
+python -c "import jax; import torch; print('jax', jax.__version__); print('jax devices:', jax.devices()); print('torch cuda:', torch.cuda.is_available())"
+VERIFY_RC=$?
+set -e
+export LD_LIBRARY_PATH="$_SAVED_LD"
+
+if [[ $VERIFY_RC -ne 0 ]]; then
+    echo "WARN: JAX GPU check exited $VERIFY_RC (often LD_LIBRARY_PATH vs pip jaxlib)."
+    echo "      PMGen packages/weights are installed. On GPU jobs use: source scripts/pmgen_env.sh"
+else
+    echo "JAX GPU verification OK"
+fi
 
 echo "=== Longleaf PMGen install complete ==="

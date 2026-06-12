@@ -37,10 +37,9 @@ fi
 
 cd "$PMGEN_ROOT"
 
-# Clean partial env from a failed login-node attempt
-if conda env list | awk '{print $1}' | grep -qx "PMGen"; then
-    echo "Removing partial PMGen env before reinstall..."
-    conda env remove -n PMGen -y
+# Skip full reinstall if PMGen env + AFfine weights already present (resume-safe).
+if conda env list | awk '{print $1}' | grep -qx "PMGen" && [[ -d "$PMGEN_ROOT/AFfine/af_params" ]]; then
+    echo "PMGen env and AFfine weights found — running install script in resume/verify mode only."
 fi
 
 set +e
@@ -54,9 +53,8 @@ if [[ $INSTALL_RC -ne 0 ]]; then
     exit $INSTALL_RC
 fi
 
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate PMGen
-python -c "import jax, torch; print('jax', jax.devices()); print('torch cuda', torch.cuda.is_available())"
+source "$REPO_ROOT/scripts/pmgen_env.sh"
+python -c "import jax, torch; print('jax', jax.__version__, jax.devices()); print('torch cuda', torch.cuda.is_available())"
 
 echo "=== PMGen install complete ==="
 echo "Finished: $(date)"

@@ -156,11 +156,21 @@ def run_pmgen_batch(
         pmgen_script = pmgen_root / "run_PMGen.py"
         run_mode = step_cfg.get("pmgen_run_mode", "single")
 
+        repo_root = Path(__file__).resolve().parent.parent
+        pmgen_env_sh = repo_root / "scripts" / "pmgen_env.sh"
+        env_setup = (
+            f"source {pmgen_env_sh}"
+            if pmgen_env_sh.exists()
+            else (
+                f"source $(conda info --base)/etc/profile.d/conda.sh && "
+                f"conda activate {pmgen_env} && "
+                "module load cuda 2>/dev/null || true && "
+                "unset LD_LIBRARY_PATH"
+            )
+        )
         cmd_parts = [
             f"cd {pmgen_root}",
-            f"source $(conda info --base)/etc/profile.d/conda.sh",
-            f"conda activate {pmgen_env}",
-            "module load cuda 2>/dev/null || true",
+            env_setup,
             "python run_PMGen.py",
             "--mode wrapper",
             f"--run {run_mode}",
