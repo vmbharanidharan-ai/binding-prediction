@@ -11,7 +11,7 @@
 
 # Step 0: ESM-2 embeddings (run before step5; can parallelize with step1)
 
-source "$(dirname "$0")/common.sh"
+source "${SLURM_SUBMIT_DIR}/slurm/common.sh"
 
 echo "=== Step 0: Embeddings ==="
 python run_pipeline.py --step embeddings --input "$INPUT_TSV"

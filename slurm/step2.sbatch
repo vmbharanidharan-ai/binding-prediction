@@ -10,7 +10,7 @@
 # Step 2: Structural scoring + clustering (CPU)
 # Output: work/step2_scored/ranked_structures.tsv
 
-source "$(dirname "$0")/common.sh"
+source "${SLURM_SUBMIT_DIR}/slurm/common.sh"
 
 echo "=== Step 2: Structure Scoring ==="
 python run_pipeline.py --step step2 --input "$INPUT_TSV"

@@ -12,7 +12,7 @@
 # Step 1: Peptide–HLA structure generation (ColabFold)
 # Output: work/step1_structures/ and work/step2_scored/parsed_structures.tsv
 
-source "$(dirname "$0")/common.sh"
+source "${SLURM_SUBMIT_DIR}/slurm/common.sh"
 
 echo "=== Step 1: Structure Generation ==="
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"

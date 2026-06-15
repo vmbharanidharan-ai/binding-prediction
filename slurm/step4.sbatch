@@ -12,7 +12,7 @@
 # Step 4: Binder validation (ColabFold multimer, GPU)
 # Output: work/step4_validated/binder_scores.tsv
 
-source "$(dirname "$0")/common.sh"
+source "${SLURM_SUBMIT_DIR}/slurm/common.sh"
 
 echo "=== Step 4: Binder Validation ==="
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"

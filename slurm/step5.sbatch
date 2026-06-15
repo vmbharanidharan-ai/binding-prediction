@@ -11,7 +11,7 @@
 # Requires: embeddings (step0), step2, step4 outputs
 # Output: work/step5_ranked/final_rankings.tsv
 
-source "$(dirname "$0")/common.sh"
+source "${SLURM_SUBMIT_DIR}/slurm/common.sh"
 
 echo "=== Step 5: ML Ranking ==="
 python run_pipeline.py --step step5 --input "$INPUT_TSV"

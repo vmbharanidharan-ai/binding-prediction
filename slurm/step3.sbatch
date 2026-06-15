@@ -12,7 +12,7 @@
 # Step 3: RFdiffusion binder design (GPU)
 # Output: work/step3_binders/binder_designs.tsv
 
-source "$(dirname "$0")/common.sh"
+source "${SLURM_SUBMIT_DIR}/slurm/common.sh"
 
 echo "=== Step 3: RFdiffusion ==="
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"

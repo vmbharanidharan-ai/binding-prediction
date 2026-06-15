@@ -10,5 +10,6 @@ source "$(dirname "$0")/colabfold_env.sh"
 
 echo "Python: $(which python)"
 echo "colabfold_batch: $(which colabfold_batch)"
+python -c "import haiku; import jax; print('haiku:', haiku.__version__, '| jax:', jax.__version__)"
 python -c "import jax; print('jax devices:', jax.devices())"
 python -c "import jaxlib; print('jaxlib:', jaxlib.__version__, jaxlib.__file__)"
