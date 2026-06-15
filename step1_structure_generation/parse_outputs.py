@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 
 from utils.logging import setup_logger
-from utils.structure_utils import find_pdb_files, load_colabfold_scores
+from utils.structure_utils import find_complex_pdb_files, load_colabfold_scores
 from utils.slurm_utils import load_config
 
 PARSED_COLUMNS = [
@@ -34,6 +34,7 @@ def parse_colabfold_outputs(
     """Parse all ColabFold output PDBs and scores into a unified TSV."""
     config = load_config(config_path)
     logger = setup_logger("step1_parse", config["paths"]["logs_dir"])
+    min_chains = int(config.get("step1", {}).get("colabfold_min_chains", 2))
 
     manifest = pd.read_csv(manifest_tsv, sep="\t")
     rows = []
@@ -45,9 +46,12 @@ def parse_colabfold_outputs(
             logger.warning(f"Output directory missing: {job_dir}")
             continue
 
-        pdb_files = find_pdb_files(str(job_dir))
+        pdb_files = find_complex_pdb_files(str(job_dir), min_chains=min_chains)
         if not pdb_files:
-            logger.warning(f"No PDB files found for {job_id}")
+            logger.warning(
+                f"No {min_chains}-chain complex PDB files found for {job_id} "
+                "(monomer-only outputs are ignored)"
+            )
             continue
 
         scores = load_colabfold_scores(str(job_dir))

@@ -8,10 +8,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
-from utils.fasta_utils import normalize_allele_name, write_fasta
+from utils.fasta_utils import normalize_allele_name
+from utils.colabfold_utils import (
+    is_colabfold_complex_fasta,
+    write_colabfold_complex_fasta,
+)
 from utils.hla_helper import resolve_hla_sequence
 from utils.logging import setup_logger
-from utils.slurm_utils import filter_pending, get_completed_ids, load_config
+from utils.slurm_utils import get_completed_ids, load_config
 
 
 def generate_colabfold_inputs(
@@ -37,14 +41,19 @@ def generate_colabfold_inputs(
 
     manifest_path = Path(output_dir) / "input_manifest.tsv"
     completed = get_completed_ids(str(manifest_path), "job_id") if restart else set()
-    pending = filter_pending(df, completed, "job_id")
+
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    def input_is_ready(job_id: str) -> bool:
+        fasta_path = out_path / f"{job_id}.fasta"
+        return job_id in completed and is_colabfold_complex_fasta(str(fasta_path))
+
+    pending = df[~df["job_id"].apply(input_is_ready)] if restart else df
 
     if pending.empty:
         logger.info("All inputs already generated (restart-safe skip).")
         return pd.read_csv(manifest_path, sep="\t") if manifest_path.exists() else df
-
-    out_path = Path(output_dir)
-    out_path.mkdir(parents=True, exist_ok=True)
 
     manifest_rows = []
     for _, row in pending.iterrows():
@@ -56,11 +65,11 @@ def generate_colabfold_inputs(
 
         job_id = row["job_id"]
         fasta_path = out_path / f"{job_id}.fasta"
-        records = [
-            (f"peptide_{row['peptide']}", row["peptide"]),
-            (allele_key, hla_seq),
-        ]
-        write_fasta(records, str(fasta_path))
+        write_colabfold_complex_fasta(
+            job_id,
+            [row["peptide"], hla_seq],
+            str(fasta_path),
+        )
 
         manifest_rows.append(
             {

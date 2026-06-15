@@ -135,6 +135,30 @@ def find_pdb_files(directory: str, pattern: str = "*.pdb") -> List[Path]:
     return sorted(Path(directory).rglob(pattern))
 
 
+def get_pdb_chains(pdb_path: str) -> Set[str]:
+    """Return chain IDs present in ATOM/HETATM records."""
+    chains: Set[str] = set()
+    with open(pdb_path) as fh:
+        for line in fh:
+            if line.startswith(("ATOM", "HETATM")):
+                chains.add(line[21].strip() or "A")
+    return chains
+
+
+def is_complex_pdb(pdb_path: str, min_chains: int = 2) -> bool:
+    """Return True if PDB contains at least min_chains distinct chains."""
+    return len(get_pdb_chains(pdb_path)) >= min_chains
+
+
+def find_complex_pdb_files(
+    directory: str,
+    min_chains: int = 2,
+    pattern: str = "*.pdb",
+) -> List[Path]:
+    """Find PDB files that contain a multimer/complex (multiple chains)."""
+    return [p for p in find_pdb_files(directory, pattern) if is_complex_pdb(str(p), min_chains)]
+
+
 def extract_model_id(pdb_path: str) -> int:
     """Extract model number from ColabFold PDB filename."""
     match = re.search(r"model[_-]?(\d+)", Path(pdb_path).stem, re.IGNORECASE)

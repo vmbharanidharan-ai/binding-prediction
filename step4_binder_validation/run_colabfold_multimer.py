@@ -11,8 +11,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
+from utils.colabfold_utils import build_colabfold_batch_args
 from utils.logging import setup_logger
 from utils.slurm_utils import filter_pending, get_completed_ids, load_config
+from utils.structure_utils import find_complex_pdb_files
 
 
 def run_colabfold_multimer(
@@ -38,6 +40,7 @@ def run_colabfold_multimer(
 
     out_root = Path(output_dir)
     out_root.mkdir(parents=True, exist_ok=True)
+    min_chains = int(step_cfg.get("colabfold_min_chains", 3))
     status_rows = []
 
     for _, row in pending.iterrows():
@@ -45,24 +48,20 @@ def run_colabfold_multimer(
         job_out = out_root / complex_id
 
         if (job_out / "done.flag").exists() and restart:
-            status_rows.append(
-                {"complex_id": complex_id, "status": "completed", "output_dir": str(job_out)}
-            )
-            continue
+            if find_complex_pdb_files(str(job_out), min_chains=min_chains):
+                status_rows.append(
+                    {"complex_id": complex_id, "status": "completed", "output_dir": str(job_out)}
+                )
+                continue
+            logger.warning(f"Stale done.flag without {min_chains}-chain PDB for {complex_id}")
+            (job_out / "done.flag").unlink()
 
         job_out.mkdir(parents=True, exist_ok=True)
 
         multimer_cmd = step_cfg["colabfold_multimer_cmd"]
         repo_root = Path(__file__).resolve().parent.parent
         colabfold_env_sh = repo_root / "scripts" / "colabfold_env.sh"
-        multimer_args = [
-            row["fasta_path"],
-            str(job_out),
-            "--num-models",
-            str(step_cfg["num_models"]),
-            "--num-recycle",
-            str(step_cfg["num_recycle"]),
-        ]
+        multimer_args = build_colabfold_batch_args(row["fasta_path"], str(job_out), step_cfg)
 
         if colabfold_env_sh.exists():
             bash_cmd = (
@@ -83,11 +82,15 @@ def run_colabfold_multimer(
 
         try:
             subprocess.run(run_cmd, check=True, env=os.environ.copy())
+            if not find_complex_pdb_files(str(job_out), min_chains=min_chains):
+                raise RuntimeError(
+                    f"Multimer finished but no {min_chains}-chain complex PDB in {job_out}"
+                )
             (job_out / "done.flag").touch()
             status_rows.append(
                 {"complex_id": complex_id, "status": "completed", "output_dir": str(job_out)}
             )
-        except subprocess.CalledProcessError as e:
+        except (subprocess.CalledProcessError, RuntimeError) as e:
             logger.error(f"Multimer failed for {complex_id}: {e}")
             status_rows.append(
                 {"complex_id": complex_id, "status": "failed", "output_dir": str(job_out)}

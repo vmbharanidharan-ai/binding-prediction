@@ -10,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
-from utils.fasta_utils import read_fasta, write_fasta
+from utils.colabfold_utils import write_colabfold_complex_fasta
+from utils.fasta_utils import read_fasta
 from utils.hla_helper import resolve_hla_sequence
 from utils.logging import setup_logger
 from utils.slurm_utils import load_config
@@ -69,12 +70,11 @@ def build_binder_complexes(
 
         complex_id = f"{design_id}_complex"
         fasta_path = out_path / f"{complex_id}.fasta"
-        records = [
-            (f"binder_{design_id}", binder_seq),
-            (f"peptide_{peptide}", peptide),
-            (allele_key, hla_seq),
-        ]
-        write_fasta(records, str(fasta_path))
+        write_colabfold_complex_fasta(
+            complex_id,
+            [binder_seq, peptide, hla_seq],
+            str(fasta_path),
+        )
 
         rows.append(
             {

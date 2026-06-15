@@ -46,6 +46,10 @@ step1:
   # ColabFold (Step 1 when backend=colabfold; also used for Step 4 multimer)
   # Set COLABFOLD_BIN env var on Longleaf (see slurm/common.sh).
   colabfold_cmd: "${COLABFOLD_BIN:-colabfold_batch}"
+  colabfold_model_type: alphafold2_multimer_v3
+  colabfold_pair_mode: paired
+  colabfold_rank_by: multimer
+  colabfold_min_chains: 2
   use_templates: false
 
 step2:
@@ -67,6 +71,10 @@ step4:
   num_recycle: 1                 # optimized: 1 (full: 3)
   max_complexes_per_peptide: 3   # cap multimer jobs per peptide (biggest pipeline speed win)
   colabfold_multimer_cmd: "${COLABFOLD_BIN:-colabfold_batch}"
+  colabfold_model_type: alphafold2_multimer_v3
+  colabfold_pair_mode: paired
+  colabfold_rank_by: multimer
+  colabfold_min_chains: 3
 
 rosetta:
   bin_path: ""                 # e.g. /nas/longleaf/.../rosetta_scripts.default.linuxgccrelease

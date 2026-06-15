@@ -11,9 +11,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
+from utils.colabfold_utils import build_colabfold_batch_args
 from utils.logging import setup_logger
 from utils.slurm_utils import filter_pending, get_completed_ids, load_config
-from utils.structure_utils import find_pdb_files
+from utils.structure_utils import find_complex_pdb_files
 
 
 def run_colabfold_batch(
@@ -39,6 +40,7 @@ def run_colabfold_batch(
 
     out_root = Path(output_dir)
     out_root.mkdir(parents=True, exist_ok=True)
+    min_chains = int(step_cfg.get("colabfold_min_chains", 2))
 
     status_rows = []
     for _, row in pending.iterrows():
@@ -47,7 +49,7 @@ def run_colabfold_batch(
         job_out = out_root / job_id
 
         if (job_out / "done.flag").exists() and restart:
-            if find_pdb_files(str(job_out)):
+            if find_complex_pdb_files(str(job_out), min_chains=min_chains):
                 logger.info(f"Skipping completed job: {job_id}")
                 status_rows.append({"job_id": job_id, "status": "completed", "output_dir": str(job_out)})
                 continue
@@ -59,14 +61,7 @@ def run_colabfold_batch(
         colabfold_cmd = step_cfg["colabfold_cmd"]
         repo_root = Path(__file__).resolve().parent.parent
         colabfold_env_sh = repo_root / "scripts" / "colabfold_env.sh"
-        colabfold_args = [
-            fasta_path,
-            str(job_out),
-            "--num-models",
-            str(step_cfg["num_models"]),
-            "--num-recycle",
-            str(step_cfg["num_recycle"]),
-        ]
+        colabfold_args = build_colabfold_batch_args(fasta_path, str(job_out), step_cfg)
 
         if colabfold_env_sh.exists():
             bash_cmd = (
@@ -84,8 +79,10 @@ def run_colabfold_batch(
 
         try:
             subprocess.run(run_cmd, check=True, capture_output=False, env=os.environ.copy())
-            if not find_pdb_files(str(job_out)):
-                raise RuntimeError(f"ColabFold finished but no PDB files in {job_out}")
+            if not find_complex_pdb_files(str(job_out), min_chains=min_chains):
+                raise RuntimeError(
+                    f"ColabFold finished but no {min_chains}-chain complex PDB in {job_out}"
+                )
             (job_out / "done.flag").touch()
             status_rows.append({"job_id": job_id, "status": "completed", "output_dir": str(job_out)})
             logger.info(f"Completed: {job_id}")
