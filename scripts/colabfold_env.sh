@@ -1,8 +1,11 @@
 #!/bin/bash
 # ColabFold / alphafoldenv runtime for Longleaf GPU jobs.
-# Use the venv where jax-cuda12-plugin was installed (not neo_binder).
+# Sourced by run_colabfold.py and verify_colabfold_gpu.sh.
 
+export PROJECT_ROOT="${PROJECT_ROOT:-}"
 export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT}/alphafoldenv}"
+export COLABFOLD_BIN="${COLABFOLD_BIN:-${ALPHAFOLD_ENV}/bin/colabfold_batch}"
+export COLABFOLD_DATA_DIR="${COLABFOLD_DATA_DIR:-${PROJECT_ROOT}/colabfold_data}"
 
 module load cuda 2>/dev/null || true
 
@@ -12,6 +15,9 @@ if [[ -f "${ALPHAFOLD_ENV}/bin/activate" ]]; then
 fi
 
 export PATH="${ALPHAFOLD_ENV}/bin:${PATH}"
-
-# Prefer JAX CUDA plugin wheels over module CUDA libs when needed.
 export JAX_PLATFORMS="${JAX_PLATFORMS:-cuda}"
+
+# ColabFold weights / cache on /work (not $HOME)
+if [[ -d "${COLABFOLD_DATA_DIR}" ]]; then
+    export COLABFOLD_DATA_DIR
+fi

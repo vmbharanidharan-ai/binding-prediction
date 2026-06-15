@@ -105,6 +105,13 @@ def run_colabfold_batch(
                 status_df = status_df.drop_duplicates(subset=["job_id"], keep="last")
         status_df.to_csv(status_path, sep="\t", index=False)
 
+    failed = [r["job_id"] for r in status_rows if r.get("status") == "failed"]
+    if failed:
+        raise RuntimeError(
+            f"ColabFold failed for: {', '.join(failed)}. "
+            "Check log.txt under each job directory and colabfold_status.tsv."
+        )
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run ColabFold batch")

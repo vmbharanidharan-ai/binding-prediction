@@ -52,10 +52,14 @@ fi
 export NEO_BINDER_WORK_ROOT="${NEO_BINDER_WORK_ROOT:-}"
 export PMGEN_ROOT="${PMGEN_ROOT:-${PROJECT_ROOT}/PMGen}"
 export RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"
+export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT}/alphafoldenv}"
+export COLABFOLD_BIN="${COLABFOLD_BIN:-${ALPHAFOLD_ENV}/bin/colabfold_batch}"
+export COLABFOLD_DATA_DIR="${COLABFOLD_DATA_DIR:-${PROJECT_ROOT}/colabfold_data}"
 
-echo "Input TSV:  $INPUT_TSV"
-echo "Work root:  $NEO_BINDER_WORK_ROOT"
-echo "PMGen root: $PMGEN_ROOT"
+echo "Input TSV:      $INPUT_TSV"
+echo "Work root:      $NEO_BINDER_WORK_ROOT"
+echo "ColabFold bin:  $COLABFOLD_BIN"
+echo "PMGen root:     $PMGEN_ROOT"
 
 if [[ -z "$NEO_BINDER_WORK_ROOT" ]]; then
     echo "ERROR: Set NEO_BINDER_WORK_ROOT or PROJECT_ROOT before submitting."

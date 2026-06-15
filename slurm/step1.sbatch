@@ -15,6 +15,7 @@
 source "${SLURM_SUBMIT_DIR}/slurm/common.sh"
 
 echo "=== Step 1: Structure Generation ==="
+echo "ColabFold: $COLABFOLD_BIN"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
 python run_pipeline.py --step step1 --input "$INPUT_TSV"
 echo "=== Step 1 complete ==="

@@ -16,6 +16,8 @@ export INPUT_TSV="${INPUT_TSV:-data/step5_input.tsv}"
 export PMGEN_ROOT="${PMGEN_ROOT:-${PROJECT_ROOT}/PMGen}"
 export RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"
 export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT}/alphafoldenv}"
+export COLABFOLD_BIN="${COLABFOLD_BIN:-${ALPHAFOLD_ENV}/bin/colabfold_batch}"
+export COLABFOLD_DATA_DIR="${COLABFOLD_DATA_DIR:-${PROJECT_ROOT}/colabfold_data}"
 if [[ -d "${ALPHAFOLD_ENV}/bin" ]]; then
     export PATH="${ALPHAFOLD_ENV}/bin:$PATH"
 fi

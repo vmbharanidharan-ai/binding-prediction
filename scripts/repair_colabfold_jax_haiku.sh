@@ -1,24 +1,24 @@
 #!/bin/bash
-# Fix ColabFold crash: AttributeError: module 'jax' has no attribute 'linear_util'
+# Repair alphafoldenv JAX + haiku for ColabFold on Longleaf (Python 3.9, CUDA 12).
 #
-# ColabFold 1.5.5 pins dm-haiku==0.0.10 (Python 3.9). Newer haiku (0.0.14+) needs Py3.10+.
-# JAX >= 0.4.24 removed jax.linear_util, which haiku 0.0.10 still uses.
+# Working stack: jax==0.4.27, jaxlib+cuda12, dm-haiku==0.0.12, chex==0.1.90
 #
-# Fix: keep dm-haiku==0.0.10 and pin JAX/jaxlib 0.4.23 with CUDA 12 wheels.
-#
-# Usage (Longleaf login node):
+# Usage:
 #   export PROJECT_ROOT=/work/users/.../minibinder_prediction
 #   bash scripts/repair_colabfold_jax_haiku.sh
 
 set -euo pipefail
 
-export PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=scripts/colabfold_versions.env
+source "${SCRIPT_DIR}/colabfold_versions.env"
+
+export PROJECT_ROOT="${PROJECT_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-$PROJECT_ROOT/alphafoldenv}"
-JAX_VERSION="${JAX_VERSION:-0.4.23}"
-JAX_CUDA_INDEX="https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
 
 if [[ ! -f "${ALPHAFOLD_ENV}/bin/activate" ]]; then
     echo "ERROR: alphafoldenv not found at ${ALPHAFOLD_ENV}"
+    echo "Run: bash scripts/setup_colabfold_longleaf.sh"
     exit 1
 fi
 
@@ -26,38 +26,36 @@ fi
 source "${ALPHAFOLD_ENV}/bin/activate"
 
 echo "Python: $(python -V)"
+echo "Target: jax==${COLABFOLD_JAX_VERSION}, dm-haiku==${COLABFOLD_HAIKU_VERSION}"
 echo ""
-echo "=== Before repair ==="
-pip show jax jaxlib dm-haiku 2>/dev/null | grep -E '^Name|^Version' || true
+echo "=== Before ==="
+pip show jax jaxlib dm-haiku chex 2>/dev/null | grep -E '^Name|^Version' || true
 
 echo ""
-echo "=== Pin dm-haiku for ColabFold 1.5.5 (Python 3.9) ==="
-pip install 'dm-haiku==0.0.10'
+echo "=== Pin haiku + chex (Python 3.9 compatible) ==="
+pip install "dm-haiku==${COLABFOLD_HAIKU_VERSION}" "chex==${COLABFOLD_CHEX_VERSION}"
 
 echo ""
-echo "=== Pin JAX ${JAX_VERSION} with CUDA 12 (compatible with haiku 0.0.10) ==="
+echo "=== Pin JAX ${COLABFOLD_JAX_VERSION} with CUDA 12 wheels ==="
 pip uninstall -y jax jaxlib jax-cuda12-plugin jax-cuda12-pjrt 2>/dev/null || true
 pip install -U \
-    "jax[cuda12_pip]==${JAX_VERSION}" \
-    -f "${JAX_CUDA_INDEX}"
+    "jax[cuda12_pip]==${COLABFOLD_JAX_VERSION}" \
+    -f "${JAX_CUDA_RELEASES_URL}"
 
 echo ""
-echo "=== After repair ==="
-pip show jax jaxlib dm-haiku | grep -E '^Name|^Version'
+echo "=== After ==="
+pip show jax jaxlib dm-haiku chex | grep -E '^Name|^Version'
 
 echo ""
-echo "=== Verify imports (CPU ok on login node) ==="
+echo "=== Verify imports ==="
 python -c "
 import haiku
 import jax
+from colabfold.alphafold import models
 print('dm-haiku:', haiku.__version__)
 print('jax:', jax.__version__)
-print('haiku import OK')
+print('colabfold models import OK')
 "
 
 echo ""
-echo "=== GPU check (optional; run on GPU node) ==="
-echo "  srun --partition=volta-gpu --qos=gpu_access --gres=gpu:1 --mem=8G --time=00:05:00 \\"
-echo "    bash scripts/verify_colabfold_gpu.sh"
-echo ""
-echo "Done. Clear colabfold_status.tsv and resubmit Step 1."
+echo "Done. GPU check: srun ... bash scripts/verify_colabfold_gpu.sh"

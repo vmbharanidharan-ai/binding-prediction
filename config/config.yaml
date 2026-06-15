@@ -44,7 +44,8 @@ step1:
   pmgen_no_netmhcpan: true
   pmgen_models: ["model_1_ptm", "model_2_ptm", "model_3_ptm"]
   # ColabFold (Step 1 when backend=colabfold; also used for Step 4 multimer)
-  colabfold_cmd: "colabfold_batch"
+  # Set COLABFOLD_BIN env var on Longleaf (see slurm/common.sh).
+  colabfold_cmd: "${COLABFOLD_BIN:-colabfold_batch}"
   use_templates: false
 
 step2:
@@ -65,7 +66,7 @@ step4:
   num_models: 3                # optimized: 3 (full: 5)
   num_recycle: 1                 # optimized: 1 (full: 3)
   max_complexes_per_peptide: 3   # cap multimer jobs per peptide (biggest pipeline speed win)
-  colabfold_multimer_cmd: "colabfold_batch"
+  colabfold_multimer_cmd: "${COLABFOLD_BIN:-colabfold_batch}"
 
 rosetta:
   bin_path: ""                 # e.g. /nas/longleaf/.../rosetta_scripts.default.linuxgccrelease
