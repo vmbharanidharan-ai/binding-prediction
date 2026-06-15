@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import List, Mapping, Sequence
 
@@ -58,4 +59,20 @@ def build_colabfold_batch_args(
     if rank_by:
         args.extend(["--rank", str(rank_by)])
 
+    data_dir = step_cfg.get("colabfold_data_dir") or os.environ.get("COLABFOLD_DATA_DIR")
+    if data_dir:
+        args.extend(["--data", str(data_dir)])
+
     return args
+
+
+def read_colabfold_job_log(job_dir: str, tail_lines: int = 40) -> str:
+    """Return the tail of ColabFold log.txt from a job output directory."""
+    log_path = Path(job_dir) / "log.txt"
+    if not log_path.exists():
+        return ""
+    lines = log_path.read_text(errors="replace").splitlines()
+    if not lines:
+        return ""
+    excerpt = "\n".join(lines[-tail_lines:])
+    return f"\n--- ColabFold log.txt ({log_path}) ---\n{excerpt}\n"

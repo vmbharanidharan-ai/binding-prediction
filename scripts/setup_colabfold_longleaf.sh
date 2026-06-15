@@ -37,10 +37,8 @@ fi
 bash "${SCRIPT_DIR}/repair_colabfold_jax_haiku.sh"
 
 echo ""
-echo "=== Optional: download AlphaFold params to /work (once) ==="
-echo "  source ${ALPHAFOLD_ENV}/bin/activate"
-echo "  python -m colabfold.download --path ${COLABFOLD_DATA_DIR}"
-echo ""
+echo "=== Download AlphaFold weights to /work (recommended once on login node) ==="
+bash "${SCRIPT_DIR}/prefetch_colabfold_weights.sh"
 echo "Export before sbatch:"
 echo "  export PROJECT_ROOT=$PROJECT_ROOT"
 echo "  export ALPHAFOLD_ENV=$ALPHAFOLD_ENV"

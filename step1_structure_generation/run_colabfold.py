@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
-from utils.colabfold_utils import build_colabfold_batch_args
+from utils.colabfold_utils import build_colabfold_batch_args, read_colabfold_job_log
 from utils.logging import setup_logger
 from utils.slurm_utils import filter_pending, get_completed_ids, load_config
 from utils.structure_utils import find_complex_pdb_files
@@ -87,7 +87,8 @@ def run_colabfold_batch(
             status_rows.append({"job_id": job_id, "status": "completed", "output_dir": str(job_out)})
             logger.info(f"Completed: {job_id}")
         except (subprocess.CalledProcessError, RuntimeError) as e:
-            logger.error(f"ColabFold failed for {job_id}: {e}")
+            log_excerpt = read_colabfold_job_log(str(job_out))
+            logger.error(f"ColabFold failed for {job_id}: {e}{log_excerpt}")
             status_rows.append({"job_id": job_id, "status": "failed", "output_dir": str(job_out)})
 
     if status_rows:
