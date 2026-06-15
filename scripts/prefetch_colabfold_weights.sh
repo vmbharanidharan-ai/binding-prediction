@@ -1,8 +1,8 @@
 #!/bin/bash
 # Download ColabFold AlphaFold weights to /work (run once on login node with network).
 #
-# Multimer v3 weights (~3.8 GB) must exist before GPU jobs; compute nodes may
-# fail or time out if weights are downloaded during sbatch.
+# Multimer v3 weights (~3.8 GB) must exist before GPU jobs. Uses COLABFOLD_DATA_DIR
+# on /work, not ~/.cache/colabfold (home quota).
 #
 # Usage:
 #   export PROJECT_ROOT=/work/users/.../minibinder_prediction
@@ -10,16 +10,18 @@
 
 set -euo pipefail
 
-export PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export PROJECT_ROOT="${PROJECT_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-$PROJECT_ROOT/alphafoldenv}"
-export COLABFOLD_DATA_DIR="${COLABFOLD_DATA_DIR:-$PROJECT_ROOT/colabfold_data}"
 
-mkdir -p "$COLABFOLD_DATA_DIR"
+# shellcheck source=scripts/colabfold_work_paths.sh
+source "${SCRIPT_DIR}/colabfold_work_paths.sh"
 
 # shellcheck disable=SC1091
 source "${ALPHAFOLD_ENV}/bin/activate"
 
 echo "Downloading ColabFold weights to: $COLABFOLD_DATA_DIR"
+echo "XDG_CACHE_HOME: $XDG_CACHE_HOME"
 python - <<'PY'
 import os
 from pathlib import Path
@@ -31,8 +33,10 @@ for model in ("alphafold2_ptm", "alphafold2_multimer_v3"):
     print(f"=== {model} ===")
     download_alphafold_params(model, data_dir)
 print("Done.")
+print("Params directory:", data_dir / "params")
 PY
 
 echo ""
-echo "Weights ready. Export for sbatch:"
-echo "  export COLABFOLD_DATA_DIR=$COLABFOLD_DATA_DIR"
+echo "Weights ready. These are set automatically in slurm/common.sh:"
+echo "  COLABFOLD_DATA_DIR=$COLABFOLD_DATA_DIR"
+echo "  XDG_CACHE_HOME=$XDG_CACHE_HOME"

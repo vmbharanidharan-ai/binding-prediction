@@ -5,7 +5,10 @@
 export PROJECT_ROOT="${PROJECT_ROOT:-}"
 export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT}/alphafoldenv}"
 export COLABFOLD_BIN="${COLABFOLD_BIN:-${ALPHAFOLD_ENV}/bin/colabfold_batch}"
-export COLABFOLD_DATA_DIR="${COLABFOLD_DATA_DIR:-${PROJECT_ROOT}/colabfold_data}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/colabfold_work_paths.sh
+source "${SCRIPT_DIR}/colabfold_work_paths.sh"
 
 module load cuda 2>/dev/null || true
 
@@ -16,8 +19,3 @@ fi
 
 export PATH="${ALPHAFOLD_ENV}/bin:${PATH}"
 export JAX_PLATFORMS="${JAX_PLATFORMS:-cuda}"
-
-# ColabFold weights / cache on /work (not $HOME)
-if [[ -d "${COLABFOLD_DATA_DIR}" ]]; then
-    export COLABFOLD_DATA_DIR
-fi

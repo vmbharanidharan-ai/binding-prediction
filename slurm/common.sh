@@ -17,7 +17,11 @@ export PMGEN_ROOT="${PMGEN_ROOT:-${PROJECT_ROOT}/PMGen}"
 export RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"
 export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT}/alphafoldenv}"
 export COLABFOLD_BIN="${COLABFOLD_BIN:-${ALPHAFOLD_ENV}/bin/colabfold_batch}"
-export COLABFOLD_DATA_DIR="${COLABFOLD_DATA_DIR:-${PROJECT_ROOT}/colabfold_data}"
+
+_SLURM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/colabfold_work_paths.sh
+source "${_SLURM_DIR}/../scripts/colabfold_work_paths.sh"
+
 if [[ -d "${ALPHAFOLD_ENV}/bin" ]]; then
     export PATH="${ALPHAFOLD_ENV}/bin:$PATH"
 fi
@@ -33,6 +37,8 @@ fi
 
 echo "Host:     $(hostname)"
 echo "Work dir: $NEO_BINDER_WORK_ROOT"
+echo "ColabFold data: ${COLABFOLD_DATA_DIR:-<unset>}"
+echo "XDG cache:      ${XDG_CACHE_HOME:-<unset>}"
 echo "Input:    $INPUT_TSV"
 echo "Started:  $(date)"
 echo ""

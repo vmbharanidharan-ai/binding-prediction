@@ -13,7 +13,7 @@ source "${SCRIPT_DIR}/colabfold_versions.env"
 
 export PROJECT_ROOT="${PROJECT_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-$PROJECT_ROOT/alphafoldenv}"
-export COLABFOLD_DATA_DIR="${COLABFOLD_DATA_DIR:-$PROJECT_ROOT/colabfold_data}"
+export COLABFOLD_DATA_DIR="${COLABFOLD_DATA_DIR:-$PROJECT_ROOT/colabfold_params}"
 
 echo "PROJECT_ROOT:      $PROJECT_ROOT"
 echo "ALPHAFOLD_ENV:     $ALPHAFOLD_ENV"

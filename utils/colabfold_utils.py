@@ -59,7 +59,11 @@ def build_colabfold_batch_args(
     if rank_by:
         args.extend(["--rank", str(rank_by)])
 
-    data_dir = step_cfg.get("colabfold_data_dir") or os.environ.get("COLABFOLD_DATA_DIR")
+    data_dir = (
+        step_cfg.get("colabfold_data_dir")
+        or os.environ.get("COLABFOLD_DATA_DIR")
+        or os.environ.get("COLABFOLD_PARAMS_DIR")
+    )
     if data_dir:
         args.extend(["--data", str(data_dir)])
 

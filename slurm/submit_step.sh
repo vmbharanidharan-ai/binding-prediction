@@ -54,10 +54,10 @@ export PMGEN_ROOT="${PMGEN_ROOT:-${PROJECT_ROOT}/PMGen}"
 export RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"
 export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT}/alphafoldenv}"
 export COLABFOLD_BIN="${COLABFOLD_BIN:-${ALPHAFOLD_ENV}/bin/colabfold_batch}"
-export COLABFOLD_DATA_DIR="${COLABFOLD_DATA_DIR:-${PROJECT_ROOT}/colabfold_data}"
 
 echo "Input TSV:      $INPUT_TSV"
 echo "Work root:      $NEO_BINDER_WORK_ROOT"
+echo "ColabFold data: ${COLABFOLD_DATA_DIR:-$PROJECT_ROOT/colabfold_params}"
 echo "ColabFold bin:  $COLABFOLD_BIN"
 echo "PMGen root:     $PMGEN_ROOT"
 

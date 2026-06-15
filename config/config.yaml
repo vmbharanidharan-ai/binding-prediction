@@ -50,7 +50,7 @@ step1:
   colabfold_pair_mode: unpaired+paired
   colabfold_rank_by: auto
   colabfold_min_chains: 2
-  colabfold_data_dir: "${COLABFOLD_DATA_DIR:-}"
+  colabfold_data_dir: "${COLABFOLD_DATA_DIR:-${COLABFOLD_PARAMS_DIR:-}}"
   use_templates: false
 
 step2:
@@ -76,7 +76,7 @@ step4:
   colabfold_pair_mode: unpaired+paired
   colabfold_rank_by: auto
   colabfold_min_chains: 3
-  colabfold_data_dir: "${COLABFOLD_DATA_DIR:-}"
+  colabfold_data_dir: "${COLABFOLD_DATA_DIR:-${COLABFOLD_PARAMS_DIR:-}}"
 
 rosetta:
   bin_path: ""                 # e.g. /nas/longleaf/.../rosetta_scripts.default.linuxgccrelease
