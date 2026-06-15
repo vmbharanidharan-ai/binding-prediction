@@ -1,9 +1,9 @@
 """Run ColabFold multimer validation for binder–peptide–HLA complexes."""
 
 import argparse
+import os
+import shlex
 import subprocess
-from pathlib import Path
-
 import sys
 from pathlib import Path
 
@@ -51,15 +51,30 @@ def run_colabfold_multimer(
             continue
 
         job_out.mkdir(parents=True, exist_ok=True)
-        cmd = [
-            step_cfg["colabfold_multimer_cmd"],
+
+        multimer_cmd = step_cfg["colabfold_multimer_cmd"]
+        repo_root = Path(__file__).resolve().parent.parent
+        colabfold_env_sh = repo_root / "scripts" / "colabfold_env.sh"
+        multimer_args = [
             row["fasta_path"],
             str(job_out),
-            "--num-models", str(step_cfg["num_models"]),
-            "--num-recycle", str(step_cfg["num_recycle"]),
+            "--num-models",
+            str(step_cfg["num_models"]),
+            "--num-recycle",
+            str(step_cfg["num_recycle"]),
         ]
 
-        logger.info(f"Running multimer: {complex_id}")
+        if colabfold_env_sh.exists():
+            bash_cmd = (
+                f"source {shlex.quote(str(colabfold_env_sh))} && "
+                f"{shlex.quote(multimer_cmd)} " + " ".join(shlex.quote(a) for a in multimer_args)
+            )
+            run_cmd = ["bash", "-lc", bash_cmd]
+            logger.info(f"Running multimer {complex_id}: {bash_cmd}")
+        else:
+            run_cmd = [multimer_cmd, *multimer_args]
+            logger.info(f"Running multimer: {complex_id}")
+
         if dry_run:
             status_rows.append(
                 {"complex_id": complex_id, "status": "dry_run", "output_dir": str(job_out)}
@@ -67,7 +82,7 @@ def run_colabfold_multimer(
             continue
 
         try:
-            subprocess.run(cmd, check=True)
+            subprocess.run(run_cmd, check=True, env=os.environ.copy())
             (job_out / "done.flag").touch()
             status_rows.append(
                 {"complex_id": complex_id, "status": "completed", "output_dir": str(job_out)}

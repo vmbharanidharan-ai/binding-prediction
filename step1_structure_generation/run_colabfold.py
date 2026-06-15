@@ -1,6 +1,8 @@
 """Run ColabFold batch structure prediction for peptide–HLA pairs."""
 
 import argparse
+import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -49,21 +51,35 @@ def run_colabfold_batch(
             continue
 
         job_out.mkdir(parents=True, exist_ok=True)
-        cmd = [
-            step_cfg["colabfold_cmd"],
+
+        colabfold_cmd = step_cfg["colabfold_cmd"]
+        repo_root = Path(__file__).resolve().parent.parent
+        colabfold_env_sh = repo_root / "scripts" / "colabfold_env.sh"
+        colabfold_args = [
             fasta_path,
             str(job_out),
-            "--num-models", str(step_cfg["num_models"]),
-            "--num-recycle", str(step_cfg["num_recycle"]),
+            "--num-models",
+            str(step_cfg["num_models"]),
+            "--num-recycle",
+            str(step_cfg["num_recycle"]),
         ]
 
-        logger.info(f"Running: {' '.join(cmd)}")
+        if colabfold_env_sh.exists():
+            bash_cmd = (
+                f"source {shlex.quote(str(colabfold_env_sh))} && "
+                f"{shlex.quote(colabfold_cmd)} " + " ".join(shlex.quote(a) for a in colabfold_args)
+            )
+            run_cmd = ["bash", "-lc", bash_cmd]
+            logger.info(f"Running: {bash_cmd}")
+        else:
+            run_cmd = [colabfold_cmd, *colabfold_args]
+            logger.info(f"Running: {' '.join(run_cmd)}")
         if dry_run:
             status_rows.append({"job_id": job_id, "status": "dry_run", "output_dir": str(job_out)})
             continue
 
         try:
-            subprocess.run(cmd, check=True, capture_output=False)
+            subprocess.run(run_cmd, check=True, capture_output=False, env=os.environ.copy())
             (job_out / "done.flag").touch()
             status_rows.append({"job_id": job_id, "status": "completed", "output_dir": str(job_out)})
             logger.info(f"Completed: {job_id}")
