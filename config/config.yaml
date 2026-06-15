@@ -9,6 +9,7 @@ paths:
   work_root: "${NEO_BINDER_WORK_ROOT:-./work}"
   inputs_dir: "${NEO_BINDER_WORK_ROOT:-./work}/inputs"
   step1_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step1_structures"
+  step1_5_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step1_5_truncated"
   step2_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step2_scored"
   step3_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step3_binders"
   step4_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step4_validated"
@@ -52,6 +53,17 @@ step1:
   colabfold_min_chains: 2
   colabfold_data_dir: "${COLABFOLD_DATA_DIR:-${COLABFOLD_PARAMS_DIR:-}}"
   use_templates: false
+
+# Step 1.5 (optional): truncate HLA to binding groove for RFdiffusion (Step 3).
+# Step 1 full complexes are preserved; truncated PDBs live in step1_5_outputs/.
+step1_5:
+  enabled: true
+  use_for_rfdiffusion: true
+  best_model_only: true
+  peptide_chain: auto
+  hla_chain: auto
+  hla_residue_start: 25
+  hla_residue_end: 180
 
 step2:
   contact_distance_angstrom: 4.0

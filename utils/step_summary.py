@@ -20,6 +20,10 @@ STEP_OUTPUTS = {
         ("Structure PDBs", lambda c: Path(c["paths"]["step1_outputs"])),
         ("Parsed structures table", lambda c: Path(c["paths"]["step2_outputs"]) / "parsed_structures.tsv"),
     ],
+    "step1_5": [
+        ("Truncated structures table", lambda c: Path(c["paths"]["step1_5_outputs"]) / "truncated_structures.tsv"),
+        ("Truncated PDBs", lambda c: Path(c["paths"]["step1_5_outputs"])),
+    ],
     "step2": [
         ("Interface metrics", lambda c: Path(c["paths"]["step2_outputs"]) / "interface_metrics.tsv"),
         ("Clustered structures", lambda c: Path(c["paths"]["step2_outputs"]) / "clustered_structures.tsv"),
@@ -44,7 +48,8 @@ STEP_OUTPUTS = {
 
 NEXT_STEP = {
     "embeddings": "sbatch slurm/step1.sbatch  (or run step1 in parallel)",
-    "step1": "sbatch slurm/step2.sbatch",
+    "step1": "./slurm/submit_step.sh 1.5  (optional) or submit_step.sh 2",
+    "step1_5": "./slurm/submit_step.sh 2",
     "step2": "sbatch slurm/step3.sbatch",
     "step3": "sbatch slurm/step4.sbatch",
     "step4": "sbatch slurm/step5.sbatch",
@@ -95,6 +100,7 @@ def print_step_summary(step: str, config_path: str = "config/config.yaml") -> No
 
     preview = {
         "step1": Path(config["paths"]["step2_outputs"]) / "parsed_structures.tsv",
+        "step1_5": Path(config["paths"]["step1_5_outputs"]) / "truncated_structures.tsv",
         "step2": Path(config["paths"]["step2_outputs"]) / "ranked_structures.tsv",
         "step3": Path(config["paths"]["step3_outputs"]) / "binder_designs.tsv",
         "step4": Path(config["paths"]["step4_outputs"]) / "binder_scores.tsv",

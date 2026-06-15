@@ -33,6 +33,16 @@ STEPS = [
     "step5",
 ]
 
+ALL_STEPS = [
+    "embeddings",
+    "step1",
+    "step1_5",
+    "step2",
+    "step3",
+    "step4",
+    "step5",
+]
+
 
 def run_cmd(cmd: list, logger, dry_run: bool = False) -> None:
     """Execute a subprocess command with logging."""
@@ -97,6 +107,33 @@ def run_step1(config: dict, input_tsv: str, logger, dry_run: bool = False) -> No
              "--output", f"{paths['step2_outputs']}/parsed_structures.tsv"],
             logger, dry_run,
         )
+
+
+def run_step1_5(config: dict, logger, dry_run: bool = False) -> None:
+    """Stage 1.5 (optional): Truncate peptide–HLA complexes to HLA groove for RFdiffusion."""
+    if not config.get("step1_5", {}).get("enabled", False):
+        logger.info("Step 1.5 disabled (step1_5.enabled=false); skipping.")
+        return
+
+    paths = config["paths"]
+    parsed_tsv = f"{paths['step2_outputs']}/parsed_structures.tsv"
+    if not Path(parsed_tsv).exists():
+        raise FileNotFoundError(
+            f"Step 1.5 requires {parsed_tsv}. Run Step 1 first."
+        )
+
+    run_cmd(
+        [
+            "python",
+            "step1_5_structure_prep/truncate_hla_groove.py",
+            "--input",
+            parsed_tsv,
+            "--output-dir",
+            paths["step1_5_outputs"],
+        ],
+        logger,
+        dry_run,
+    )
 
 
 def run_step2(config: dict, logger, dry_run: bool = False) -> None:
@@ -222,14 +259,14 @@ def main():
     parser.add_argument("--input", default="data/step5_input.tsv", help="Input TSV")
     parser.add_argument("--config", default="config/config.yaml")
     parser.add_argument(
-        "--steps", nargs="+", choices=STEPS, default=STEPS,
+        "--steps", nargs="+", choices=ALL_STEPS, default=STEPS,
         help="Pipeline steps to run",
     )
     parser.add_argument(
-        "--step", choices=STEPS, default=None,
+        "--step", choices=ALL_STEPS, default=None,
         help="Run a single step (alias for --steps <step>)",
     )
-    parser.add_argument("--from-step", default=None, help="Resume from this step")
+    parser.add_argument("--from-step", choices=ALL_STEPS, default=None, help="Resume from this step")
     parser.add_argument("--no-summary", action="store_true", help="Skip output summary")
     parser.add_argument("--dry-run", action="store_true", help="Print commands only")
     parser.add_argument("--no-restart", action="store_true")
@@ -243,12 +280,13 @@ def main():
     steps_to_run = [args.step] if args.step else list(args.steps)
 
     if args.from_step:
-        idx = STEPS.index(args.from_step)
-        steps_to_run = STEPS[idx:]
+        idx = ALL_STEPS.index(args.from_step)
+        steps_to_run = ALL_STEPS[idx:]
 
     step_fns = {
         "embeddings": lambda: run_embeddings(config, args.input, logger, args.dry_run),
         "step1": lambda: run_step1(config, args.input, logger, args.dry_run),
+        "step1_5": lambda: run_step1_5(config, logger, args.dry_run),
         "step2": lambda: run_step2(config, logger, args.dry_run),
         "step3": lambda: run_step3(config, logger, args.dry_run),
         "step4": lambda: run_step4(config, logger, args.dry_run),

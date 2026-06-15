@@ -13,6 +13,7 @@ STEP="${1:-}"
 case "$STEP" in
   0|embeddings|step0) JOB="step0_embeddings" ;;
   1|step1)           JOB="step1" ;;
+  1.5|step1_5)     JOB="step1_5" ;;
   2|step2)           JOB="step2" ;;
   3|step3)           JOB="step3" ;;
   4|step4)           JOB="step4" ;;
@@ -23,6 +24,7 @@ case "$STEP" in
     echo "Steps (submit in order, step0 can run parallel with step1):"
     echo "  0 / embeddings  — ESM-2 embeddings"
     echo "  1 / step1       — ColabFold peptide–HLA structures"
+    echo "  1.5 / step1_5   — (optional) Truncate HLA groove for RFdiffusion"
     echo "  2 / step2       — Structure scoring + clustering"
     echo "  3 / step3       — RFdiffusion binder design"
     echo "  4 / step4       — Binder validation (multimer)"
@@ -32,6 +34,7 @@ case "$STEP" in
     echo "  export NEO_BINDER_WORK_ROOT=/work/users/\$USER/neo_binder"
     echo "  $0 1"
     echo "  # after step1 finishes, inspect work/step2_scored/parsed_structures.tsv"
+    echo "  $0 1.5   # optional: truncate for RFdiffusion before step 2/3"
     echo "  $0 2"
     exit 1
     ;;
@@ -76,6 +79,7 @@ echo "Monitor:  squeue -u \$USER"
 echo "Logs:     tail -f logs/${JOB}_*.out"
 case "$JOB" in
   step0_embeddings) SUMMARY_STEP="embeddings" ;;
+  step1_5)          SUMMARY_STEP="step1_5" ;;
   *)                SUMMARY_STEP="$JOB" ;;
 esac
 echo "Summary:  python utils/step_summary.py --step ${SUMMARY_STEP}"

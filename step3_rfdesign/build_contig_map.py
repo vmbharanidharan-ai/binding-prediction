@@ -1,8 +1,6 @@
 """Build RFdiffusion contig maps for minibinder design."""
 
 import argparse
-from pathlib import Path
-
 import sys
 from pathlib import Path
 
@@ -10,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
+from step1_5_structure_prep.rfdiffusion_targets import load_truncated_structure_map, resolve_rfdiffusion_pdb_path
 from utils.logging import setup_logger
 from utils.slurm_utils import load_config
 
@@ -29,13 +28,16 @@ def build_contig_map(
     step_cfg = config["step3"]
 
     df = pd.read_csv(ranked_structures_tsv, sep="\t")
+    truncated_map = load_truncated_structure_map(config)
+    if truncated_map:
+        logger.info(f"Using Step 1.5 truncated PDBs for {len(truncated_map)} job(s) in RFdiffusion contigs")
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
     rows = []
     for _, row in df.iterrows():
         job_id = row["job_id"]
-        pdb_path = row["pdb_path"]
+        pdb_path = resolve_rfdiffusion_pdb_path(job_id, row["pdb_path"], config, truncated_map)
         binder_len = (step_cfg["binder_length_min"] + step_cfg["binder_length_max"]) // 2
 
         # RFdiffusion contig: binder scaffold + target chain
@@ -52,6 +54,7 @@ def build_contig_map(
                 "peptide": row["peptide"],
                 "allele": row["allele"],
                 "pdb_path": pdb_path,
+                "source_pdb_path": row["pdb_path"],
                 "structure_rank": row["structure_rank"],
                 "structure_confidence_score": row["structure_confidence_score"],
                 "contig_map": contig,
