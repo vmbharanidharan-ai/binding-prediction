@@ -51,9 +51,11 @@ def build_colabfold_batch_args(
     if model_type:
         args.extend(["--model-type", str(model_type)])
 
-    pair_mode = step_cfg.get("colabfold_pair_mode")
+    pair_mode = str(step_cfg.get("colabfold_pair_mode", ""))
+    if pair_mode == "unpaired+paired":
+        pair_mode = "unpaired_paired"
     if pair_mode:
-        args.extend(["--pair-mode", str(pair_mode)])
+        args.extend(["--pair-mode", pair_mode])
 
     rank_by = step_cfg.get("colabfold_rank_by")
     if rank_by:

@@ -47,7 +47,7 @@ step1:
   # Set COLABFOLD_BIN env var on Longleaf (see slurm/common.sh).
   colabfold_cmd: "${COLABFOLD_BIN:-colabfold_batch}"
   colabfold_model_type: alphafold2_multimer_v3
-  colabfold_pair_mode: unpaired+paired
+  colabfold_pair_mode: unpaired_paired
   colabfold_rank_by: auto
   colabfold_min_chains: 2
   colabfold_data_dir: "${COLABFOLD_DATA_DIR:-${COLABFOLD_PARAMS_DIR:-}}"
@@ -73,7 +73,7 @@ step4:
   max_complexes_per_peptide: 3   # cap multimer jobs per peptide (biggest pipeline speed win)
   colabfold_multimer_cmd: "${COLABFOLD_BIN:-colabfold_batch}"
   colabfold_model_type: alphafold2_multimer_v3
-  colabfold_pair_mode: unpaired+paired
+  colabfold_pair_mode: unpaired_paired
   colabfold_rank_by: auto
   colabfold_min_chains: 3
   colabfold_data_dir: "${COLABFOLD_DATA_DIR:-${COLABFOLD_PARAMS_DIR:-}}"
