@@ -35,14 +35,23 @@ def ensure_work_dirs(config: dict) -> None:
     Path(config["paths"].get("logs_dir", "./logs")).mkdir(parents=True, exist_ok=True)
 
 
-def get_completed_ids(output_tsv: str, id_column: str = "job_id") -> set:
-    """Return IDs already processed (for restart-safe execution)."""
+def get_completed_ids(
+    output_tsv: str,
+    id_column: str = "job_id",
+    status_column: str = "status",
+) -> set:
+    """Return IDs already processed successfully (for restart-safe execution)."""
     path = Path(output_tsv)
     if not path.exists() or path.stat().st_size == 0:
         return set()
-    df = pd.read_csv(path, sep="\t")
+    try:
+        df = pd.read_csv(path, sep="\t")
+    except pd.errors.EmptyDataError:
+        return set()
     if id_column not in df.columns:
         return set()
+    if status_column in df.columns:
+        df = df[df[status_column].astype(str).str.lower() == "completed"]
     return set(df[id_column].astype(str))
 
 

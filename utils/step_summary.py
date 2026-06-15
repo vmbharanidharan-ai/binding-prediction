@@ -54,7 +54,12 @@ NEXT_STEP = {
 
 def _describe_path(path: Path) -> tuple[bool, str]:
     if path.suffix == ".tsv" and path.exists():
-        n = len(pd.read_csv(path, sep="\t"))
+        if path.stat().st_size == 0:
+            return True, "0 rows (empty file)"
+        try:
+            n = len(pd.read_csv(path, sep="\t"))
+        except pd.errors.EmptyDataError:
+            return True, "0 rows (empty file)"
         return True, f"{n} rows"
     if path.is_dir():
         pdbs = list(path.rglob("*.pdb"))
@@ -95,11 +100,15 @@ def print_step_summary(step: str, config_path: str = "config/config.yaml") -> No
         "step4": Path(config["paths"]["step4_outputs"]) / "binder_scores.tsv",
         "step5": Path(config["paths"]["step5_outputs"]) / "final_rankings.tsv",
     }
-    if step in preview and preview[step].exists():
-        df = pd.read_csv(preview[step], sep="\t")
-        print("")
-        print(f"  Preview ({preview[step].name}, first 5 rows):")
-        print(df.head(5).to_string(index=False))
+    if step in preview and preview[step].exists() and preview[step].stat().st_size > 0:
+        try:
+            df = pd.read_csv(preview[step], sep="\t")
+        except pd.errors.EmptyDataError:
+            df = pd.DataFrame()
+        if not df.empty:
+            print("")
+            print(f"  Preview ({preview[step].name}, first 5 rows):")
+            print(df.head(5).to_string(index=False))
 
     print("")
     print(f"  Next: {NEXT_STEP.get(step, 'see README')}")

@@ -12,6 +12,18 @@ from utils.logging import setup_logger
 from utils.structure_utils import find_pdb_files, load_colabfold_scores
 from utils.slurm_utils import load_config
 
+PARSED_COLUMNS = [
+    "job_id",
+    "peptide",
+    "allele",
+    "gene",
+    "junction",
+    "pdb_path",
+    "model_id",
+    "plddt_mean",
+    "pae_mean",
+]
+
 
 def parse_colabfold_outputs(
     structure_dir: str,
@@ -54,8 +66,13 @@ def parse_colabfold_outputs(
                 }
             )
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=PARSED_COLUMNS)
     Path(output_tsv).parent.mkdir(parents=True, exist_ok=True)
+    if df.empty:
+        raise RuntimeError(
+            f"No ColabFold PDB outputs found under {structure_dir}. "
+            "Check log.txt in each job subdirectory and colabfold_status.tsv."
+        )
     df.to_csv(output_tsv, sep="\t", index=False)
     logger.info(f"Parsed {len(df)} structures → {output_tsv}")
     return df

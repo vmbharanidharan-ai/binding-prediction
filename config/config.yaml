@@ -33,7 +33,7 @@ runtime:
   profile: optimized
 
 step1:
-  backend: pmgen            # pmgen | colabfold
+  backend: colabfold            # pmgen | colabfold
   num_models: 3              # optimized: 3 (full: 5)
   num_recycle: 1             # optimized: 1 (full: 3) — largest AF speed win
   # PMGen (Step 1 when backend=pmgen) — install via scripts/setup_pmgen_longleaf.sh

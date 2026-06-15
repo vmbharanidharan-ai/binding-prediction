@@ -13,6 +13,7 @@ import pandas as pd
 
 from utils.logging import setup_logger
 from utils.slurm_utils import filter_pending, get_completed_ids, load_config
+from utils.structure_utils import find_pdb_files
 
 
 def run_colabfold_batch(
@@ -46,9 +47,12 @@ def run_colabfold_batch(
         job_out = out_root / job_id
 
         if (job_out / "done.flag").exists() and restart:
-            logger.info(f"Skipping completed job: {job_id}")
-            status_rows.append({"job_id": job_id, "status": "completed", "output_dir": str(job_out)})
-            continue
+            if find_pdb_files(str(job_out)):
+                logger.info(f"Skipping completed job: {job_id}")
+                status_rows.append({"job_id": job_id, "status": "completed", "output_dir": str(job_out)})
+                continue
+            logger.warning(f"Stale done.flag without PDBs for {job_id}; re-running ColabFold")
+            (job_out / "done.flag").unlink()
 
         job_out.mkdir(parents=True, exist_ok=True)
 
@@ -80,19 +84,25 @@ def run_colabfold_batch(
 
         try:
             subprocess.run(run_cmd, check=True, capture_output=False, env=os.environ.copy())
+            if not find_pdb_files(str(job_out)):
+                raise RuntimeError(f"ColabFold finished but no PDB files in {job_out}")
             (job_out / "done.flag").touch()
             status_rows.append({"job_id": job_id, "status": "completed", "output_dir": str(job_out)})
             logger.info(f"Completed: {job_id}")
-        except subprocess.CalledProcessError as e:
+        except (subprocess.CalledProcessError, RuntimeError) as e:
             logger.error(f"ColabFold failed for {job_id}: {e}")
             status_rows.append({"job_id": job_id, "status": "failed", "output_dir": str(job_out)})
 
     if status_rows:
         status_df = pd.DataFrame(status_rows)
-        if status_path.exists() and restart:
-            existing = pd.read_csv(status_path, sep="\t")
-            status_df = pd.concat([existing, status_df], ignore_index=True)
-            status_df = status_df.drop_duplicates(subset=["job_id"], keep="last")
+        if status_path.exists() and restart and status_path.stat().st_size > 0:
+            try:
+                existing = pd.read_csv(status_path, sep="\t")
+            except pd.errors.EmptyDataError:
+                existing = pd.DataFrame()
+            if not existing.empty:
+                status_df = pd.concat([existing, status_df], ignore_index=True)
+                status_df = status_df.drop_duplicates(subset=["job_id"], keep="last")
         status_df.to_csv(status_path, sep="\t", index=False)
 
 
