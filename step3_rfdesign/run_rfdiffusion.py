@@ -14,6 +14,47 @@ from utils.logging import setup_logger
 from utils.slurm_utils import filter_pending, get_completed_ids, load_config
 
 
+def _resolve_inference_invocation(rfdiff_root: Path, step_cfg: dict) -> str:
+    """Return python invocation for run_inference.py relative to RFDIFFUSION_ROOT."""
+    cmd = str(step_cfg.get("rfdiffusion_cmd", "python scripts/run_inference.py")).strip()
+    script = cmd.split(maxsplit=1)[1] if cmd.startswith("python ") else cmd
+    script_path = Path(script)
+
+    if script_path.is_absolute():
+        return f"python {script_path}"
+
+    parts = script_path.parts
+    if parts and parts[0].lower() == "rfdiffusion":
+        script_path = Path(*parts[1:])
+
+    candidate = rfdiff_root / script_path
+    if not candidate.exists():
+        candidate = rfdiff_root / "scripts" / "run_inference.py"
+    if not candidate.exists():
+        raise FileNotFoundError(f"RFdiffusion inference script not found under {rfdiff_root}")
+    return f"python {candidate.relative_to(rfdiff_root)}"
+
+
+def _resolve_weights_dir(rfdiff_root: Path, step_cfg: dict) -> str:
+    """Resolve RFdiffusion model checkpoint directory."""
+    for candidate in (
+        step_cfg.get("rfdiffusion_weights"),
+        os.environ.get("RFDIFFUSION_WEIGHTS"),
+        str(rfdiff_root / "models"),
+    ):
+        if not candidate:
+            continue
+        path = str(candidate).strip().rstrip("}")
+        if Path(path).exists():
+            return path
+    default = str(rfdiff_root / "models")
+    if Path(default).exists():
+        return default
+    raise FileNotFoundError(
+        f"RFdiffusion weights not found. Expected {default} or set RFDIFFUSION_WEIGHTS."
+    )
+
+
 def run_rfdiffusion(
     contig_manifest_tsv: str,
     output_dir: str,
@@ -56,13 +97,13 @@ def run_rfdiffusion(
             continue
 
         job_out.mkdir(parents=True, exist_ok=True)
-        rfdiff_root = os.environ.get(
-            "RFDIFFUSION_ROOT",
-            str(Path(__file__).resolve().parent.parent.parent / "RFdiffusion"),
+        rfdiff_root = Path(
+            os.environ.get(
+                "RFDIFFUSION_ROOT",
+                str(Path(__file__).resolve().parent.parent.parent / "RFdiffusion"),
+            )
         )
-        weights_dir = step_cfg.get("rfdiffusion_weights") or os.environ.get(
-            "RFDIFFUSION_WEIGHTS", f"{rfdiff_root}/models"
-        )
+        weights_dir = _resolve_weights_dir(rfdiff_root, step_cfg)
         hydra_args = [
             f"inference.input_pdb={row['pdb_path']}",
             f"inference.output_prefix={job_out / design_id}",
@@ -78,14 +119,7 @@ def run_rfdiffusion(
 
         repo_root = Path(__file__).resolve().parent.parent
         rfdiff_env_sh = repo_root / "scripts" / "rfdiffusion_env.sh"
-        rfdiffusion_cmd = step_cfg["rfdiffusion_cmd"]
-        if rfdiffusion_cmd.strip().startswith("python "):
-            inference_invocation = rfdiffusion_cmd
-        else:
-            inference_script = Path(rfdiffusion_cmd)
-            if not inference_script.is_absolute():
-                inference_script = Path(rfdiff_root) / "scripts" / "run_inference.py"
-            inference_invocation = f"python {inference_script}"
+        inference_invocation = _resolve_inference_invocation(rfdiff_root, step_cfg)
 
         bash_cmd = (
             f"source {rfdiff_env_sh} && cd {rfdiff_root} && "
@@ -121,6 +155,10 @@ def run_rfdiffusion(
             status_df = pd.concat([existing, status_df], ignore_index=True)
             status_df = status_df.drop_duplicates(subset=["design_id"], keep="last")
         status_df.to_csv(status_path, sep="\t", index=False)
+
+    failed = [r["design_id"] for r in status_rows if r.get("status") == "failed"]
+    if failed:
+        raise RuntimeError(f"RFdiffusion failed for: {', '.join(failed)}")
 
     # Collect output manifest
     binder_rows = []

@@ -15,8 +15,11 @@ def expand_config_vars(raw: str) -> str:
     def replace_default(match: re.Match[str]) -> str:
         return os.environ.get(match.group(1), match.group(2))
 
-    expanded = re.sub(r"\$\{([^}:]+):-([^}]*)\}", replace_default, raw)
-    return os.path.expandvars(expanded)
+    # Expand innermost ${VAR:-default} first so nested defaults work.
+    pattern = re.compile(r"\$\{([^}:]+):-([^}]*)\}")
+    while pattern.search(raw):
+        raw = pattern.sub(replace_default, raw)
+    return os.path.expandvars(raw)
 
 
 def load_config(config_path: str = "config/config.yaml") -> dict:

@@ -73,12 +73,12 @@ step2:
   min_cluster_size: 1
 
 step3:
-  rfdiffusion_cmd: "python RFdiffusion/scripts/run_inference.py"
+  rfdiffusion_cmd: "python scripts/run_inference.py"
   num_designs_per_structure: 3    # optimized: 3 (full: 10)
   binder_length_min: 50
   binder_length_max: 80
   diffusion_steps: 25             # optimized: 25 (full: 50)
-  rfdiffusion_weights: "${RFDIFFUSION_WEIGHTS:-${RFDIFFUSION_ROOT}/models}"
+  rfdiffusion_weights: "${RFDIFFUSION_ROOT}/models"
   hotspots:
     auto_select: true
     min_count: 5
