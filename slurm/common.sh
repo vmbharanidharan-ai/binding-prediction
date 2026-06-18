@@ -15,6 +15,7 @@ export NEO_BINDER_WORK_ROOT="${NEO_BINDER_WORK_ROOT:-/work/users/$USER/neo_binde
 export INPUT_TSV="${INPUT_TSV:-data/step5_input.tsv}"
 export PMGEN_ROOT="${PMGEN_ROOT:-${PROJECT_ROOT}/PMGen}"
 export RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"
+export PROTEINMPNN_ROOT="${PROTEINMPNN_ROOT:-${PROJECT_ROOT}/ProteinMPNN}"
 export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT}/alphafoldenv}"
 export COLABFOLD_BIN="${COLABFOLD_BIN:-${ALPHAFOLD_ENV}/bin/colabfold_batch}"
 

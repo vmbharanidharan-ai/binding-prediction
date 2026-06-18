@@ -10,8 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
+from step3_5_sequence_design.binder_sequences import load_designed_binder_map, resolve_binder_sequence
 from utils.colabfold_utils import write_colabfold_complex_fasta
-from utils.fasta_utils import read_fasta
 from utils.hla_helper import resolve_hla_sequence
 from utils.logging import setup_logger
 from utils.slurm_utils import load_config
@@ -35,6 +35,9 @@ def build_binder_complexes(
     binders = pd.read_csv(binder_designs_tsv, sep="\t")
     contigs = pd.read_csv(contig_manifest_tsv, sep="\t")
     merged = binders.merge(contigs, on="design_id", how="left")
+    designed_map = load_designed_binder_map(config)
+    if designed_map:
+        logger.info(f"Using Step 3.5 ProteinMPNN sequences for {len(designed_map)} design(s)")
     max_per_peptide = config["step4"].get("max_complexes_per_peptide")
     if max_per_peptide:
         merged = (
@@ -60,13 +63,12 @@ def build_binder_complexes(
             continue
         allele_key, hla_seq = resolved
 
-        binder_seq = ""
-        if row.get("sequence_fasta") and Path(row["sequence_fasta"]).exists():
-            fasta_records = read_fasta(row["sequence_fasta"])
-            binder_seq = next(iter(fasta_records.values()), "")
-
-        if not binder_seq:
-            binder_seq = "A" * row.get("binder_length", 65)
+        binder_seq, seq_source = resolve_binder_sequence(design_id, row, config, designed_map)
+        if seq_source == "placeholder":
+            logger.warning(
+                f"{design_id}: no ProteinMPNN sequence — using poly-Ala placeholder "
+                f"(run Step 3.5 before Step 4)"
+            )
 
         complex_id = f"{design_id}_complex"
         fasta_path = out_path / f"{complex_id}.fasta"
@@ -85,6 +87,8 @@ def build_binder_complexes(
                 "fasta_path": str(fasta_path),
                 "binder_backbone": row.get("backbone_pdb", ""),
                 "target_pdb": row.get("pdb_path", ""),
+                "binder_sequence_source": seq_source,
+                "binder_sequence": binder_seq,
             }
         )
         logger.info(f"Built complex: {complex_id}")

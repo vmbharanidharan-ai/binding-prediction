@@ -14,8 +14,9 @@ Given a cohort of neoantigen candidates (peptide, HLA allele, presentation metri
 2. Scores and clusters structural hypotheses
 3. Optionally **truncates HLA to the binding groove** to reduce RFdiffusion compute
 4. Generates **minibinder backbones** conditioned on the target (RFdiffusion)
-5. Validates designs with **AlphaFold-Multimer**
-6. Ranks candidates with an **XGBoost learning-to-rank** model over biological, structural, and embedding features
+5. Assigns **binder sequences** to backbones (ProteinMPNN)
+6. Validates designs with **AlphaFold-Multimer**
+7. Ranks candidates with an **XGBoost learning-to-rank** model over biological, structural, and embedding features
 
 The output is a ranked table of peptide–allele–binder triplets ready for experimental follow-up.
 
@@ -30,6 +31,7 @@ This is not a single end-to-end model. It integrates four systems with explicit 
 | Structural uncertainty | 1 | ColabFold / AlphaFold-Multimer v3 | Peptide–HLA complex modeling; ensemble of conformations |
 | Target preparation | 1.5 *(optional)* | BioPython | HLA groove truncation for diffusion (preserves full Step 1 PDBs) |
 | Generative design | 3 | RFdiffusion | Novel binder backbone generation on truncated target |
+| Sequence design | 3.5 | ProteinMPNN | Assign amino-acid sequence to binder backbone |
 | Structural validation | 4 | ColabFold multimer | Re-fold binder + target; score engagement |
 | Prioritization | 5 | XGBoost (`rank:pairwise`) | Multi-modal ranking over biological + structural + embedding features |
 
@@ -52,6 +54,9 @@ neoJunction / cohort TSV
 │                          → ranked_structures.tsv             │
 ├──────────────────────────────────────────────────────────────┤
 │  3   RFdiffusion         Minibinder backbones (~50–80 aa)    │
+├──────────────────────────────────────────────────────────────┤
+│  3.5 ProteinMPNN         Binder sequences on backbones       │
+│                          → designed_binders.tsv              │
 ├──────────────────────────────────────────────────────────────┤
 │  4   Validation          AlphaFold-Multimer re-folding       │
 ├──────────────────────────────────────────────────────────────┤
@@ -119,7 +124,8 @@ export INPUT_TSV=data/generated/AIMDLVMMV_HLA_A0201.tsv   # example single pair
 ./slurm/submit_step.sh 1      # ColabFold peptide–HLA multimer
 ./slurm/submit_step.sh 1.5    # optional: truncate HLA groove for RFdiffusion
 ./slurm/submit_step.sh 2      # scoring + clustering
-./slurm/submit_step.sh 3      # RFdiffusion
+./slurm/submit_step.sh 3      # RFdiffusion backbones
+./slurm/submit_step.sh 3.5    # ProteinMPNN sequences
 ./slurm/submit_step.sh 4      # binder validation
 ./slurm/submit_step.sh 5      # ML ranking
 ```
@@ -213,6 +219,31 @@ step3:
 
 ---
 
+## Step 3.5: ProteinMPNN sequence design
+
+RFdiffusion outputs a **backbone only**. Step 3.5 runs ProteinMPNN on each RFdiffusion PDB, designing the **binder chain only** while keeping peptide + HLA fixed.
+
+```bash
+./slurm/submit_step.sh 3.5
+# or:
+python run_pipeline.py --step step3_5
+```
+
+Outputs:
+
+```
+work/step3_5_sequences/
+  <design_id>/
+    seqs/*.fa
+    <design_id>_best.fa
+  designed_binders.tsv    # binder_sequence for Step 4
+  proteinmpnn_status.tsv
+```
+
+Step 4 automatically uses sequences from `designed_binders.tsv` when Step 3.5 has run.
+
+---
+
 ## Work directory layout
 
 ```
@@ -221,7 +252,8 @@ $NEO_BINDER_WORK_ROOT/
 ├── step1_structures/          Full ColabFold multimer outputs
 ├── step1_5_truncated/         Groove-truncated PDBs (optional)
 ├── step2_scored/              Metrics, clusters, rankings
-├── step3_binders/             RFdiffusion designs + contigs
+├── step3_binders/             RFdiffusion backbones + contigs
+├── step3_5_sequences/         ProteinMPNN designed sequences
 ├── step4_validated/           Multimer validation scores
 ├── step5_ranked/              Feature matrix + final rankings
 └── embeddings/                ESM-2 / ProtT5 vectors
@@ -256,7 +288,8 @@ HLA sequences are resolved automatically from IMGT (`hla/setup_hla.py` runs on f
 | `step2_scored/parsed_structures.tsv` | 1 | Parsed multimer complexes with pLDDT/PAE |
 | `step1_5_truncated/truncated_structures.tsv` | 1.5 | Truncated PDB paths + pLDDT summary |
 | `step2_scored/ranked_structures.tsv` | 2 | Top structures per peptide with `structure_confidence_score` |
-| `step3_binders/binder_designs.tsv` | 3 | RFdiffusion backbone PDBs + sequences |
+| `step3_binders/binder_designs.tsv` | 3 | RFdiffusion backbone PDBs |
+| `step3_5_sequences/designed_binders.tsv` | 3.5 | ProteinMPNN binder sequences |
 | `step4_validated/binder_scores.tsv` | 4 | `binder_structural_score` per design |
 | `step5_ranked/final_rankings.tsv` | 5 | **Final ranked candidates** |
 | `step5_ml_model/model.pkl` | 5 | Trained XGBoost ranker |
@@ -312,10 +345,57 @@ Each step writes status TSVs and `done.flag` files. Re-submitting a SLURM job sk
 
 ## External dependencies
 
+### RFdiffusion (Step 3)
+
+One-time setup on Longleaf:
+
+```bash
+export PROJECT_ROOT=/work/users/$USER/minibinder_prediction
+cd $PROJECT_ROOT/binding-prediction
+
+# Login node: clone repo + submit GPU install job
+bash scripts/setup_rfdiffusion_longleaf.sh
+squeue -u $USER
+tail -f logs/rfdiffusion_install_*.out
+
+# GPU node: verify
+srun --partition=gpu --qos=gpu_access --gres=gpu:1 --mem=16G --time=00:15:00 --pty bash
+export PROJECT_ROOT=...
+bash scripts/verify_rfdiffusion_gpu.sh
+```
+
+Installs:
+- Repo at `$PROJECT_ROOT/RFdiffusion`
+- Conda env `SE3nv` (PyTorch 1.9 + DGL + RFdiffusion)
+- Weights in `RFdiffusion/models/*.pt`
+
+### ProteinMPNN (Step 3.5)
+
+One-time setup on Longleaf:
+
+```bash
+export PROJECT_ROOT=/work/users/$USER/minibinder_prediction
+cd $PROJECT_ROOT/binding-prediction
+
+# Login node: clone + create proteinmpnn env + download weights
+bash scripts/setup_proteinmpnn_longleaf.sh
+
+# GPU node: verify (optional smoke test on example PDB)
+srun --partition=gpu --qos=gpu_access --gres=gpu:1 --mem=16G --time=00:15:00 --pty bash
+export PROJECT_ROOT=...
+bash scripts/verify_proteinmpnn_gpu.sh
+```
+
+Installs:
+- Repo at `$PROJECT_ROOT/ProteinMPNN`
+- Conda env `proteinmpnn` (Python 3.10 + PyTorch)
+- Weights in `ProteinMPNN/vanilla_model_weights/` (default model `v_48_020`)
+
+### Other tools
+
 | Tool | Stages | Setup |
 |------|--------|-------|
 | **ColabFold** | 1, 4 | `scripts/setup_colabfold_longleaf.sh`; env at `$PROJECT_ROOT/alphafoldenv` |
-| **RFdiffusion** | 3 | `scripts/setup_rfdiffusion_longleaf.sh`; separate `SE3nv` env |
 | **PMGen** *(alternative Step 1)* | 1 | `scripts/setup_pmgen_longleaf.sh` |
 | **CUDA** | GPU steps | `module load cuda` on Longleaf |
 
@@ -345,7 +425,8 @@ Edit `config/config.yaml`:
 | `step1` | ColabFold vs PMGen, model count, recycle steps |
 | `step1_5` | Truncation residue range, RFdiffusion target selection |
 | `step2` | Contact distance, RMSD cluster threshold, top-N structures |
-| `step3` | Binder length, designs per structure, diffusion steps |
+| `step3` | Binder length, designs per structure, diffusion steps, hotspots |
+| `step3_5` | ProteinMPNN model, sequences per backbone, sampling temperature |
 | `step4` | Multimer validation model count, complexes per peptide cap |
 | `step5` | XGBoost hyperparameters, PCA dimensions, split strategy |
 | `embeddings` | ESM-2 model, optional ProtT5 |
@@ -379,6 +460,7 @@ binding-prediction/
 ├── step1_5_structure_prep/      HLA groove truncation
 ├── step2_structure_scoring/     Metrics, clustering, ranking
 ├── step3_rfdesign/              RFdiffusion contigs + inference
+├── step3_5_sequence_design/     ProteinMPNN sequence design
 ├── step4_binder_validation/     Multimer validation
 ├── step5_ml_model/              Feature engineering + XGBoost
 ├── embeddings/                  ESM-2 / ProtT5

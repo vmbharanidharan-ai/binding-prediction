@@ -39,6 +39,7 @@ ALL_STEPS = [
     "step1_5",
     "step2",
     "step3",
+    "step3_5",
     "step4",
     "step5",
 ]
@@ -188,6 +189,35 @@ def run_step3(config: dict, logger, dry_run: bool = False) -> None:
     )
 
 
+def run_step3_5(config: dict, logger, dry_run: bool = False) -> None:
+    """Stage 3.5: ProteinMPNN sequence design on RFdiffusion backbones."""
+    if not config.get("step3_5", {}).get("enabled", False):
+        logger.info("Step 3.5 disabled (step3_5.enabled=false); skipping.")
+        return
+
+    paths = config["paths"]
+    s3 = paths["step3_outputs"]
+    binders_tsv = f"{s3}/binder_designs.tsv"
+    contigs_tsv = f"{s3}/contigs/contig_manifest.tsv"
+    if not Path(binders_tsv).exists():
+        raise FileNotFoundError(f"Step 3.5 requires {binders_tsv}. Run Step 3 first.")
+
+    run_cmd(
+        [
+            "python",
+            "step3_5_sequence_design/run_proteinmpnn.py",
+            "--binders",
+            binders_tsv,
+            "--contigs",
+            contigs_tsv,
+            "--output-dir",
+            paths["step3_5_outputs"],
+        ],
+        logger,
+        dry_run,
+    )
+
+
 def run_step4(config: dict, logger, dry_run: bool = False) -> None:
     """Stage 4: Binder validation via AlphaFold-Multimer."""
     paths = config["paths"]
@@ -289,6 +319,7 @@ def main():
         "step1_5": lambda: run_step1_5(config, logger, args.dry_run),
         "step2": lambda: run_step2(config, logger, args.dry_run),
         "step3": lambda: run_step3(config, logger, args.dry_run),
+        "step3_5": lambda: run_step3_5(config, logger, args.dry_run),
         "step4": lambda: run_step4(config, logger, args.dry_run),
         "step5": lambda: run_step5(config, args.input, logger, args.dry_run),
     }

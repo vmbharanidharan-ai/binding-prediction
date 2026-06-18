@@ -12,6 +12,7 @@ paths:
   step1_5_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step1_5_truncated"
   step2_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step2_scored"
   step3_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step3_binders"
+  step3_5_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step3_5_sequences"
   step4_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step4_validated"
   step5_outputs: "${NEO_BINDER_WORK_ROOT:-./work}/step5_ranked"
   embeddings_dir: "${NEO_BINDER_WORK_ROOT:-./work}/embeddings"
@@ -86,6 +87,21 @@ step3:
     manual_hotspots: []           # override auto, e.g. [A4,A5,A6,A7,A8]
     peptide_chain: auto
     hla_chain: auto
+
+# Step 3.5: assign binder sequences to RFdiffusion backbones with ProteinMPNN.
+step3_5:
+  enabled: true
+  proteinmpnn_root: "${PROTEINMPNN_ROOT:-${PROJECT_ROOT}/ProteinMPNN}"
+  model_name: v_48_020
+  path_to_model_weights: ""      # empty → vanilla_model_weights/ under proteinmpnn_root
+  use_soluble_model: false
+  ca_only: false
+  num_seq_per_target: 2
+  sampling_temp: "0.1"
+  batch_size: 1
+  seed: 37
+  omit_AAs: "X"
+  binder_chain: auto             # auto-detect RFdiffusion binder chain in output PDB
 
 step4:
   num_models: 3                # optimized: 3 (full: 5)

@@ -31,8 +31,12 @@ STEP_OUTPUTS = {
     ],
     "step3": [
         ("Contig manifest", lambda c: Path(c["paths"]["step3_outputs"]) / "contigs/contig_manifest.tsv"),
-        ("Binder designs", lambda c: Path(c["paths"]["step3_outputs"]) / "binder_designs.tsv"),
+        ("Binder backbones", lambda c: Path(c["paths"]["step3_outputs"]) / "binder_designs.tsv"),
         ("Binder PDBs", lambda c: Path(c["paths"]["step3_outputs"])),
+    ],
+    "step3_5": [
+        ("Designed binders table", lambda c: Path(c["paths"]["step3_5_outputs"]) / "designed_binders.tsv"),
+        ("MPNN outputs", lambda c: Path(c["paths"]["step3_5_outputs"])),
     ],
     "step4": [
         ("Complex manifest", lambda c: Path(c["paths"]["step4_outputs"]) / "complexes/complex_manifest.tsv"),
@@ -51,7 +55,8 @@ NEXT_STEP = {
     "step1": "./slurm/submit_step.sh 1.5  (optional) or submit_step.sh 2",
     "step1_5": "./slurm/submit_step.sh 2",
     "step2": "sbatch slurm/step3.sbatch",
-    "step3": "sbatch slurm/step4.sbatch",
+    "step3": "./slurm/submit_step.sh 3.5",
+    "step3_5": "./slurm/submit_step.sh 4",
     "step4": "sbatch slurm/step5.sbatch",
     "step5": "Done — inspect work/step5_ranked/final_rankings.tsv",
 }
@@ -103,6 +108,7 @@ def print_step_summary(step: str, config_path: str = "config/config.yaml") -> No
         "step1_5": Path(config["paths"]["step1_5_outputs"]) / "truncated_structures.tsv",
         "step2": Path(config["paths"]["step2_outputs"]) / "ranked_structures.tsv",
         "step3": Path(config["paths"]["step3_outputs"]) / "binder_designs.tsv",
+        "step3_5": Path(config["paths"]["step3_5_outputs"]) / "designed_binders.tsv",
         "step4": Path(config["paths"]["step4_outputs"]) / "binder_scores.tsv",
         "step5": Path(config["paths"]["step5_outputs"]) / "final_rankings.tsv",
     }

@@ -16,6 +16,7 @@ case "$STEP" in
   1.5|step1_5)     JOB="step1_5" ;;
   2|step2)           JOB="step2" ;;
   3|step3)           JOB="step3" ;;
+  3.5|step3_5)   JOB="step3_5" ;;
   4|step4)           JOB="step4" ;;
   5|step5)           JOB="step5" ;;
   *)
@@ -27,6 +28,7 @@ case "$STEP" in
     echo "  1.5 / step1_5   — (optional) Truncate HLA groove for RFdiffusion"
     echo "  2 / step2       — Structure scoring + clustering"
     echo "  3 / step3       — RFdiffusion binder design"
+    echo "  3.5 / step3_5   — ProteinMPNN sequence design"
     echo "  4 / step4       — Binder validation (multimer)"
     echo "  5 / step5       — ML ranking"
     echo ""
@@ -55,6 +57,7 @@ fi
 export NEO_BINDER_WORK_ROOT="${NEO_BINDER_WORK_ROOT:-}"
 export PMGEN_ROOT="${PMGEN_ROOT:-${PROJECT_ROOT}/PMGen}"
 export RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"
+export PROTEINMPNN_ROOT="${PROTEINMPNN_ROOT:-${PROJECT_ROOT}/ProteinMPNN}"
 export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT}/alphafoldenv}"
 export COLABFOLD_BIN="${COLABFOLD_BIN:-${ALPHAFOLD_ENV}/bin/colabfold_batch}"
 
@@ -80,6 +83,7 @@ echo "Logs:     tail -f logs/${JOB}_*.out"
 case "$JOB" in
   step0_embeddings) SUMMARY_STEP="embeddings" ;;
   step1_5)          SUMMARY_STEP="step1_5" ;;
+  step3_5)          SUMMARY_STEP="step3_5" ;;
   *)                SUMMARY_STEP="$JOB" ;;
 esac
 echo "Summary:  python utils/step_summary.py --step ${SUMMARY_STEP}"
