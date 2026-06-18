@@ -42,7 +42,7 @@ if [[ $RESUME -eq 0 ]]; then
 
     echo "Step 3/6: Installing DGL (cu111 pip wheel) + hydra..."
     pip install --upgrade pip
-    pip install "dgl==1.0.0+cu111" -f https://data.dgl.ai/wheels/cu111/repo.html
+    pip install "dgl==1.0.0" -f https://data.dgl.ai/wheels/cu111/repo.html
     pip install hydra-core pyrsistent torchdata==0.9.0 "numpy<2"
 
     echo "Step 4/6: Installing NVIDIA SE3Transformer..."
@@ -101,7 +101,7 @@ export LD_LIBRARY_PATH="$_SAVED_LD"
 
 if [[ $VERIFY_RC -ne 0 ]]; then
     echo "WARN: verify exited $VERIFY_RC — try on GPU: source scripts/rfdiffusion_env.sh"
-    echo "      If DGL import failed: pip install dgl==1.0.0+cu111 -f https://data.dgl.ai/wheels/cu111/repo.html"
+    echo "      If DGL import failed: bash scripts/repair_se3nv_dgl.sh"
 fi
 
 echo "=== Longleaf RFdiffusion install complete ==="
