@@ -17,8 +17,9 @@ pip install \
     torchaudio==0.9.1 \
     -f https://download.pytorch.org/whl/torch_stable.html
 
-# torch 1.9 + from_numpy breaks with numpy 1.26+ (TypeError: expected np.ndarray)
-pip install "numpy==1.23.5"
+# torch 1.9 + from_numpy breaks with numpy 1.26+ (TypeError: expected np.ndarray).
+# scipy 1.12+ expects numpy 2.x ABI — pin both for DGL import stability.
+pip install "numpy==1.23.5" "scipy==1.10.1"
 
 python - <<'PY'
 import torch

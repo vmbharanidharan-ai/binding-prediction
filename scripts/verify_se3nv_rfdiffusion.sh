@@ -36,19 +36,25 @@ try:
     _ = torch.from_numpy(np.zeros((2, 3), dtype=np.float32))
 except TypeError as exc:
     print(f"ERROR: torch.from_numpy failed: {exc}")
-    print("Fix: pip uninstall -y numpy && pip install numpy==1.23.5")
+    print("Fix: pip uninstall -y numpy scipy && pip install numpy==1.23.5 scipy==1.10.1")
     sys.exit(1)
 
-import dgl
-import rfdiffusion  # noqa: F401
+try:
+    import scipy
+    import dgl
+    import rfdiffusion  # noqa: F401
+except ImportError as exc:
+    print(f"ERROR: scipy/dgl import failed: {exc}")
+    print("Fix: pip uninstall -y numpy scipy && pip install numpy==1.23.5 scipy==1.10.1")
+    sys.exit(1)
 
 dev = torch.device("cuda:0")
 u = torch.tensor([0, 1], device=dev)
-v = torch.tensor([1, 2], device=dev)
-g = dgl.graph((u, v)).to(dev)
+dst = torch.tensor([1, 2], device=dev)
+g = dgl.graph((u, dst)).to(dev)
 _ = g.num_edges()
 
-print(f"OK: torch {v}, numpy {np.__version__}, dgl {dgl.__version__}, rfdiffusion import")
+print(f"OK: torch {torch.__version__}, numpy {np.__version__}, dgl {dgl.__version__}, rfdiffusion import")
 PY
 
 echo "=== SE3nv preflight passed ==="

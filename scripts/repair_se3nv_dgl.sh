@@ -23,7 +23,7 @@ pip install --upgrade pip
 # torchdata 0.9.x still ships datapipes (required by DGL / RFdiffusion).
 # Do not --force-reinstall: that can pull torch 2.x and break RFdiffusion.
 pip install "torchdata==0.9.0" --no-deps
-pip install "numpy==1.23.5"
+pip install "numpy==1.23.5" "scipy==1.10.1"
 
 echo "Installing cudatoolkit 11.1 (DGL links against conda CUDA runtime, not PyTorch bundled libs)..."
 conda install -y --override-channels -c conda-forge cudatoolkit=11.1.1

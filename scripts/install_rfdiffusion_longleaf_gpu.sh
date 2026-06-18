@@ -64,7 +64,7 @@ if [[ $RESUME -eq 0 ]]; then
         pip install --no-cache-dir "dgl==1.0.0" -f https://data.dgl.ai/wheels/cu111/repo.html
     fi
     pip install hydra-core pyrsistent "torchdata==0.9.0" --no-deps
-    pip install "numpy==1.23.5"
+    pip install "numpy==1.23.5" "scipy==1.10.1"
 
     echo "Step 4/6: Installing NVIDIA SE3Transformer..."
     cd env/SE3Transformer
