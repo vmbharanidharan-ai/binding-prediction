@@ -17,10 +17,16 @@ pip install \
     torchaudio==0.9.1 \
     -f https://download.pytorch.org/whl/torch_stable.html
 
+# torch 1.9 + from_numpy breaks with numpy 1.26+ (TypeError: expected np.ndarray)
+pip install "numpy==1.23.5"
+
 python - <<'PY'
 import torch
 v = torch.__version__
 if not v.startswith("1.9") and not v.startswith("1.10"):
     raise SystemExit(f"ERROR: expected torch 1.9.x, got {v}")
-print("torch", v, "cuda", torch.cuda.is_available())
+import numpy as np
+x = np.zeros((2, 3), dtype=np.float32)
+_ = torch.from_numpy(x)
+print("torch", v, "cuda", torch.cuda.is_available(), "numpy", np.__version__)
 PY

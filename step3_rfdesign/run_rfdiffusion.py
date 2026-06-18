@@ -2,9 +2,11 @@
 
 import argparse
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -53,6 +55,56 @@ def _resolve_weights_dir(rfdiff_root: Path, step_cfg: dict) -> str:
     raise FileNotFoundError(
         f"RFdiffusion weights not found. Expected {default} or set RFDIFFUSION_WEIGHTS."
     )
+
+
+def _hydra_overrides(
+    row,
+    job_out: Path,
+    design_id: str,
+    weights_dir: str,
+    step_cfg: dict,
+) -> list:
+    """Build Hydra CLI overrides; values with spaces must stay single shell tokens."""
+    overrides = [
+        f"inference.input_pdb={row['pdb_path']}",
+        f"inference.output_prefix={job_out / design_id}",
+        f"contigmap.contigs=[{row['contig_map']}]",
+        f"diffuser.T={step_cfg['diffusion_steps']}",
+        f"inference.num_designs={step_cfg['num_designs_per_structure']}",
+        f"inference.model_directory_path={weights_dir}",
+    ]
+    hotspot_res = str(row.get("hotspot_res", "") or "").strip()
+    if hotspot_res:
+        overrides.append(f"ppi.hotspot_res=[{hotspot_res}]")
+    return overrides
+
+
+def _build_inference_shell_cmd(
+    rfdiff_root: Path,
+    rfdiff_env_sh: Optional[Path],
+    inference_invocation: str,
+    hydra_args: list,
+) -> str:
+    """Assemble a login-shell command with shell-safe quoting for Hydra overrides."""
+    quoted = " ".join(shlex.quote(arg) for arg in hydra_args)
+    body = f"cd {shlex.quote(str(rfdiff_root))} && {inference_invocation} {quoted}"
+    if rfdiff_env_sh and rfdiff_env_sh.exists():
+        return f"source {shlex.quote(str(rfdiff_env_sh))} && {body}"
+    return body
+
+
+def _write_job_log(job_out: Path, result, label: str) -> None:
+    log_path = job_out / "rfdiffusion.log"
+    with open(log_path, "a", encoding="utf-8") as fh:
+        fh.write(f"\n=== {label} ===\n")
+        if result is None:
+            return
+        if result.stdout:
+            fh.write("--- stdout ---\n")
+            fh.write(result.stdout)
+        if result.stderr:
+            fh.write("--- stderr ---\n")
+            fh.write(result.stderr)
 
 
 def run_rfdiffusion(
@@ -104,31 +156,24 @@ def run_rfdiffusion(
             )
         )
         weights_dir = _resolve_weights_dir(rfdiff_root, step_cfg)
-        hydra_args = [
-            f"inference.input_pdb={row['pdb_path']}",
-            f"inference.output_prefix={job_out / design_id}",
-            f"contigmap.contigs=[{row['contig_map']}]",
-            f"diffuser.T={step_cfg['diffusion_steps']}",
-            f"inference.num_designs={step_cfg['num_designs_per_structure']}",
-            f"inference.model_directory_path={weights_dir}",
-        ]
+        hydra_args = _hydra_overrides(row, job_out, design_id, weights_dir, step_cfg)
         hotspot_res = str(row.get("hotspot_res", "") or "").strip()
         if hotspot_res:
-            hydra_args.append(f"ppi.hotspot_res=[{hotspot_res}]")
             logger.info(f"RFdiffusion hotspots for {design_id}: {hotspot_res}")
 
         repo_root = Path(__file__).resolve().parent.parent
         rfdiff_env_sh = repo_root / "scripts" / "rfdiffusion_env.sh"
         inference_invocation = _resolve_inference_invocation(rfdiff_root, step_cfg)
 
-        bash_cmd = (
-            f"source {rfdiff_env_sh} && cd {rfdiff_root} && "
-            f"{inference_invocation} " + " ".join(hydra_args)
-            if rfdiff_env_sh.exists()
-            else f"cd {rfdiff_root} && {inference_invocation} " + " ".join(hydra_args)
+        bash_cmd = _build_inference_shell_cmd(
+            rfdiff_root,
+            rfdiff_env_sh if rfdiff_env_sh.exists() else None,
+            inference_invocation,
+            hydra_args,
         )
 
         logger.info(f"Running RFdiffusion: {design_id}")
+        logger.info(f"RFdiffusion shell command: {bash_cmd}")
         if dry_run:
             status_rows.append(
                 {"design_id": design_id, "status": "dry_run", "output_dir": str(job_out)}
@@ -136,13 +181,35 @@ def run_rfdiffusion(
             continue
 
         try:
-            subprocess.run(["bash", "-lc", bash_cmd], check=True)
+            result = subprocess.run(
+                ["bash", "-lc", bash_cmd],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            _write_job_log(job_out, result, "success")
+            if result.stdout:
+                logger.info(result.stdout[-4000:])
             (job_out / "done.flag").touch()
             status_rows.append(
                 {"design_id": design_id, "status": "completed", "output_dir": str(job_out)}
             )
             logger.info(f"RFdiffusion completed: {design_id}")
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        except subprocess.CalledProcessError as e:
+            _write_job_log(job_out, e, "failed")
+            if e.stderr:
+                logger.error("RFdiffusion stderr (tail):\n%s", e.stderr[-8000:])
+            if e.stdout:
+                logger.error("RFdiffusion stdout (tail):\n%s", e.stdout[-4000:])
+            logger.error(
+                "Full RFdiffusion log: %s",
+                job_out / "rfdiffusion.log",
+            )
+            logger.error(f"RFdiffusion failed for {design_id}: {e}")
+            status_rows.append(
+                {"design_id": design_id, "status": "failed", "output_dir": str(job_out)}
+            )
+        except FileNotFoundError as e:
             logger.error(f"RFdiffusion failed for {design_id}: {e}")
             status_rows.append(
                 {"design_id": design_id, "status": "failed", "output_dir": str(job_out)}

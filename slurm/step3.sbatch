@@ -16,5 +16,9 @@ source "${SLURM_SUBMIT_DIR}/slurm/common.sh"
 
 echo "=== Step 3: RFdiffusion ==="
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
+
+# Fail fast if SE3nv stack is broken (torch/numpy/dgl) before contig + inference.
+bash "${SLURM_SUBMIT_DIR}/scripts/verify_se3nv_rfdiffusion.sh"
+
 python run_pipeline.py --step step3 --input "$INPUT_TSV"
 echo "=== Step 3 complete ==="

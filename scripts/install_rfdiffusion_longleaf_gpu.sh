@@ -63,8 +63,8 @@ if [[ $RESUME -eq 0 ]]; then
     if ! conda install -y -c dglteam -c conda-forge "dgl-cuda11.1=0.9.1post1"; then
         pip install --no-cache-dir "dgl==1.0.0" -f https://data.dgl.ai/wheels/cu111/repo.html
     fi
-    pip install hydra-core pyrsistent "torchdata==0.9.0" "numpy<2" --no-deps
-    pip install "numpy<2"
+    pip install hydra-core pyrsistent "torchdata==0.9.0" --no-deps
+    pip install "numpy==1.23.5"
 
     echo "Step 4/6: Installing NVIDIA SE3Transformer..."
     cd env/SE3Transformer
