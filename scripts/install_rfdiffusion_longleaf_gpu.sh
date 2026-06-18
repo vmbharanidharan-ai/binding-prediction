@@ -15,15 +15,39 @@ echo "RFDIFFUSION_ROOT: $RFDIFFUSION_ROOT"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo N/A)"
 
 RESUME=0
-if conda env list | awk '{print $1}' | grep -qx "SE3nv" \
+TORCH_OK=0
+if conda env list | awk '{print $1}' | grep -qx "SE3nv"; then
+    if conda run -n SE3nv python - <<'PY' 2>/dev/null
+import torch
+major = int(torch.__version__.split(".")[0])
+minor = int(torch.__version__.split(".")[1].split("+")[0])
+raise SystemExit(0 if major == 1 and minor <= 10 else 1)
+PY
+    then
+        TORCH_OK=1
+    fi
+fi
+
+if [[ $TORCH_OK -eq 1 ]] \
     && [[ -d models ]] && ls models/*.pt &>/dev/null \
     && conda run -n SE3nv python -c "import rfdiffusion" &>/dev/null; then
-    echo "SE3nv + weights + rfdiffusion module found — resume/verify mode."
+    echo "SE3nv + torch 1.x + weights + rfdiffusion module found — resume/verify mode."
     RESUME=1
     conda activate SE3nv
 elif conda env list | awk '{print $1}' | grep -qx "SE3nv"; then
-    echo "Removing partial SE3nv env..."
-    conda env remove -n SE3nv -y || true
+    if [[ $TORCH_OK -eq 0 ]]; then
+        echo "SE3nv has incompatible torch (need 1.9.x). Run: bash scripts/repair_se3nv_torch.sh"
+        echo "Attempting in-place PyTorch repair now..."
+        conda activate SE3nv
+        pip uninstall -y torch torchvision torchaudio dgl dglgo 2>/dev/null || true
+        bash "$(dirname "$0")/install_se3nv_torch_pip.sh"
+        bash "$(dirname "$0")/repair_se3nv_dgl.sh"
+        RESUME=1
+        conda activate SE3nv
+    else
+        echo "Removing partial SE3nv env..."
+        conda env remove -n SE3nv -y || true
+    fi
 fi
 
 if [[ $RESUME -eq 0 ]]; then
@@ -31,19 +55,16 @@ if [[ $RESUME -eq 0 ]]; then
     conda create -n SE3nv python=3.9 pip -y --override-channels -c conda-forge
     conda activate SE3nv
 
-    echo "Step 2/6: Installing PyTorch 1.9 + CUDA 11.1 (avoid SE3nv.yml solve failures)..."
-    if ! conda install -y --override-channels \
-        -c pytorch -c conda-forge \
-        pytorch=1.9.1 torchvision=0.10.1 torchaudio=0.9.1 cudatoolkit=11.1; then
-        echo "WARN: conda pytorch install failed — trying pip cu111 wheels..."
-        pip install torch==1.9.1+cu111 torchvision==0.10.1+cu111 torchaudio==0.9.1 \
-            -f https://download.pytorch.org/whl/torch_stable.html
-    fi
+    echo "Step 2/6: Installing PyTorch 1.9 + CUDA 11.1 (pip cu111; conda solve fails on py3.9)..."
+    bash "$(dirname "$0")/install_se3nv_torch_pip.sh"
 
-    echo "Step 3/6: Installing DGL (cu111 pip wheel) + hydra..."
-    pip install --upgrade pip
-    pip install "dgl==1.0.0" -f https://data.dgl.ai/wheels/cu111/repo.html
-    pip install hydra-core pyrsistent torchdata==0.9.0 "numpy<2"
+    echo "Step 3/6: cudatoolkit + DGL (cu111) + hydra..."
+    conda install -y --override-channels -c conda-forge cudatoolkit=11.1.1
+    if ! conda install -y -c dglteam -c conda-forge "dgl-cuda11.1=0.9.1post1"; then
+        pip install --no-cache-dir "dgl==1.0.0" -f https://data.dgl.ai/wheels/cu111/repo.html
+    fi
+    pip install hydra-core pyrsistent "torchdata==0.9.0" "numpy<2" --no-deps
+    pip install "numpy<2"
 
     echo "Step 4/6: Installing NVIDIA SE3Transformer..."
     cd env/SE3Transformer
@@ -80,7 +101,7 @@ download_weight "http://files.ipd.uw.edu/pub/RFdiffusion/12fc204edeae5b57713c5ad
     models/Base_epoch8_ckpt.pt
 
 _SAVED_LD="${LD_LIBRARY_PATH:-}"
-unset LD_LIBRARY_PATH
+source "$(dirname "$0")/dgl_cuda_libpath.sh"
 set +e
 python <<'PY'
 import traceback
@@ -88,6 +109,12 @@ try:
     import torch
     import dgl
     import rfdiffusion
+    major = int(torch.__version__.split(".")[0])
+    if major >= 2:
+        raise RuntimeError(
+            f"torch {torch.__version__} is incompatible with RFdiffusion; need 1.9.x. "
+            "Run: bash scripts/repair_se3nv_torch.sh"
+        )
     print("torch", torch.__version__, "cuda", torch.cuda.is_available())
     print("dgl", dgl.__version__)
     print("rfdiffusion OK")
@@ -96,6 +123,9 @@ except Exception:
     raise SystemExit(1)
 PY
 VERIFY_RC=$?
+if [[ $VERIFY_RC -eq 0 ]]; then
+    python "$(dirname "$0")/verify_dgl_cuda.py" || VERIFY_RC=$?
+fi
 set -e
 export LD_LIBRARY_PATH="$_SAVED_LD"
 

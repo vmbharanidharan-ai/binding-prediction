@@ -17,6 +17,7 @@ echo "RFDIFFUSION_ROOT: $RFDIFFUSION_ROOT"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo N/A)"
 
 python -c "import torch, dgl, rfdiffusion; print('torch', torch.__version__, 'cuda', torch.cuda.is_available()); print('dgl', dgl.__version__)"
+python "$REPO_ROOT/scripts/verify_dgl_cuda.py"
 
 for w in Base_ckpt.pt Complex_base_ckpt.pt; do
     test -f "$RFDIFFUSION_ROOT/models/$w" || {
