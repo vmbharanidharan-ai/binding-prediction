@@ -191,6 +191,26 @@ work/step1_5_truncated/
 
 Step 3 automatically prefers truncated PDBs when `step1_5.enabled: true` and the manifest exists. Set `step1_5.enabled: false` in config to skip entirely.
 
+### Hotspot selection (Step 3)
+
+Before RFdiffusion runs, `step3_rfdesign/select_peptide_hotspots.py` picks **5–6 peptide hotspots** for `ppi.hotspot_res`:
+
+- **Skip** MHC-I anchors (P2, P9) — buried in the groove
+- **Skip** Pro/Gly and N-terminal Ala/Gly
+- **Prefer** charged (Asp/Glu/Lys/Arg) and bulky hydrophobics (Trp/Phe/Tyr/Met/Leu) in the exposed P4–P8 stretch
+- **Require** ≥3 hydrophobic hotspots in the final set
+
+For `AIMDLVMMV` this yields `A4,A5,A6,A7,A8` (Asp + Leu/Val/Met/Met).
+
+Override in `config/config.yaml`:
+
+```yaml
+step3:
+  hotspots:
+    auto_select: true
+    manual_hotspots: [A4,A5,A6,A7,A8]   # optional override
+```
+
 ---
 
 ## Work directory layout

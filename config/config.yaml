@@ -78,6 +78,14 @@ step3:
   binder_length_max: 80
   diffusion_steps: 25             # optimized: 25 (full: 50)
   rfdiffusion_weights: "${RFDIFFUSION_WEIGHTS:-${RFDIFFUSION_ROOT}/models}"
+  hotspots:
+    auto_select: true
+    min_count: 5
+    max_count: 6
+    min_hydrophobic: 3
+    manual_hotspots: []           # override auto, e.g. [A4,A5,A6,A7,A8]
+    peptide_chain: auto
+    hla_chain: auto
 
 step4:
   num_models: 3                # optimized: 3 (full: 5)

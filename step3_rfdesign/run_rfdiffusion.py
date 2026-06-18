@@ -71,6 +71,10 @@ def run_rfdiffusion(
             f"inference.num_designs={step_cfg['num_designs_per_structure']}",
             f"inference.model_directory_path={weights_dir}",
         ]
+        hotspot_res = str(row.get("hotspot_res", "") or "").strip()
+        if hotspot_res:
+            hydra_args.append(f"ppi.hotspot_res=[{hotspot_res}]")
+            logger.info(f"RFdiffusion hotspots for {design_id}: {hotspot_res}")
 
         repo_root = Path(__file__).resolve().parent.parent
         rfdiff_env_sh = repo_root / "scripts" / "rfdiffusion_env.sh"
