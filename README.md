@@ -358,16 +358,26 @@ bash scripts/setup_rfdiffusion_longleaf.sh
 squeue -u $USER
 tail -f logs/rfdiffusion_install_*.out
 
-# GPU node: verify
-srun --partition=gpu --qos=gpu_access --gres=gpu:1 --mem=16G --time=00:15:00 --pty bash
+# GPU node: verify SE3nv (must run on GPU — fails on login node)
+srun --partition=a100-gpu,l40-gpu,volta-gpu,gpu --qos=gpu_access \
+     --gres=gpu:1 --mem=32G --time=00:30:00 --pty bash
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate SE3nv
 export PROJECT_ROOT=...
-bash scripts/verify_rfdiffusion_gpu.sh
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib
+cd $PROJECT_ROOT/binding-prediction
+bash scripts/verify_se3nv_rfdiffusion.sh
+
+# If verify fails:
+bash scripts/repair_se3nv.sh
 ```
 
 Installs:
 - Repo at `$PROJECT_ROOT/RFdiffusion`
-- Conda env `SE3nv` (PyTorch 1.9 + DGL + RFdiffusion)
+- Conda env `SE3nv` (PyTorch 1.9 + numpy/scipy 1.23/1.10 + DGL + RFdiffusion)
 - Weights in `RFdiffusion/models/*.pt`
+
+Step 3 SLURM uses `neo_binder` for orchestration and `SE3nv` inside the RFdiffusion subprocess (`scripts/rfdiffusion_env.sh`). `alphafoldenv` is **not** on `PATH` during Step 3.
 
 ### ProteinMPNN (Step 3.5)
 

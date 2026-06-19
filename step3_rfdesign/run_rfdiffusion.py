@@ -89,7 +89,10 @@ def _build_inference_shell_cmd(
     quoted = " ".join(shlex.quote(arg) for arg in hydra_args)
     body = f"cd {shlex.quote(str(rfdiff_root))} && {inference_invocation} {quoted}"
     if rfdiff_env_sh and rfdiff_env_sh.exists():
-        return f"source {shlex.quote(str(rfdiff_env_sh))} && {body}"
+        return (
+            f"unset VIRTUAL_ENV; "
+            f"source {shlex.quote(str(rfdiff_env_sh))} && {body}"
+        )
     return body
 
 

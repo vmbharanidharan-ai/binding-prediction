@@ -1,34 +1,17 @@
 #!/bin/bash
-# Shared setup for all neo binder pipeline SLURM jobs.
+# Shared setup for pipeline orchestration SLURM jobs (neo_binder Python).
+#
+# Step-specific runtimes (ColabFold, RFdiffusion, ProteinMPNN) activate their own
+# envs inside subprocess wrappers — do NOT prepend alphafoldenv to PATH here.
 
 set -euo pipefail
+
+# shellcheck source=slurm/common_paths.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common_paths.sh"
 
 module load cuda 2>/dev/null || true
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate neo_binder
-
-export PROJECT_ROOT="${PROJECT_ROOT:-}"
-if [[ -n "$PROJECT_ROOT" && -z "${NEO_BINDER_WORK_ROOT:-}" ]]; then
-    export NEO_BINDER_WORK_ROOT="$PROJECT_ROOT/work"
-fi
-export NEO_BINDER_WORK_ROOT="${NEO_BINDER_WORK_ROOT:-/work/users/$USER/neo_binder}"
-export INPUT_TSV="${INPUT_TSV:-data/step5_input.tsv}"
-export PMGEN_ROOT="${PMGEN_ROOT:-${PROJECT_ROOT}/PMGen}"
-export RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"
-export PROTEINMPNN_ROOT="${PROTEINMPNN_ROOT:-${PROJECT_ROOT}/ProteinMPNN}"
-export ALPHAFOLD_ENV="${ALPHAFOLD_ENV:-${PROJECT_ROOT}/alphafoldenv}"
-export COLABFOLD_BIN="${COLABFOLD_BIN:-${ALPHAFOLD_ENV}/bin/colabfold_batch}"
-
-_SLURM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/colabfold_work_paths.sh
-source "${_SLURM_DIR}/../scripts/colabfold_work_paths.sh"
-
-if [[ -d "${ALPHAFOLD_ENV}/bin" ]]; then
-    export PATH="${ALPHAFOLD_ENV}/bin:$PATH"
-fi
-mkdir -p logs "$NEO_BINDER_WORK_ROOT"
-
-cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
 # Auto-build IMGT HLA index on first run (no manual FASTA download needed)
 if [[ ! -f hla/hla_index.pkl ]]; then
@@ -38,6 +21,7 @@ fi
 
 echo "Host:     $(hostname)"
 echo "Work dir: $NEO_BINDER_WORK_ROOT"
+echo "Pipeline: $(which python) (neo_binder)"
 echo "ColabFold data: ${COLABFOLD_DATA_DIR:-<unset>}"
 echo "XDG cache:      ${XDG_CACHE_HOME:-<unset>}"
 echo "Input:    $INPUT_TSV"

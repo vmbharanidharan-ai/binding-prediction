@@ -20,7 +20,7 @@ def main() -> int:
         _ = g.num_edges()
     except Exception as exc:
         print(f"ERROR: DGL CUDA graph ops failed: {exc}")
-        print("Fix: bash scripts/repair_se3nv_dgl.sh  (needs conda cudatoolkit=11.1 + CUDA DGL)")
+        print("Fix: bash scripts/repair_se3nv.sh")
         return 1
 
     print(f"DGL CUDA OK (dgl {dgl.__version__}, torch {torch.__version__})")

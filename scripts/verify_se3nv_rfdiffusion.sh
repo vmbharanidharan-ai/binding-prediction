@@ -19,7 +19,7 @@ import torch
 v = torch.__version__
 major = int(v.split(".")[0])
 if major >= 2:
-    print(f"ERROR: torch {v} incompatible (need 1.9.x). Run: bash scripts/repair_se3nv_torch.sh")
+    print(f"ERROR: torch {v} incompatible (need 1.9.x). Run: bash scripts/repair_se3nv.sh")
     sys.exit(1)
 
 if not torch.cuda.is_available():

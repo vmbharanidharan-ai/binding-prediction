@@ -2,6 +2,12 @@
 # RFdiffusion / SE3nv runtime for Longleaf GPU jobs.
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
+
+# alphafoldenv or other venvs prepended to PATH must not override SE3nv.
+if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+    deactivate 2>/dev/null || unset VIRTUAL_ENV
+fi
+
 conda activate "${RFDIFFUSION_ENV:-SE3nv}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

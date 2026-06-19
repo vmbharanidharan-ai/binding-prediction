@@ -40,7 +40,7 @@ if [[ $INSTALL_RC -ne 0 ]]; then
 fi
 
 source "$REPO_ROOT/scripts/rfdiffusion_env.sh"
-python -c "import torch, dgl, rfdiffusion; print('torch cuda', torch.cuda.is_available()); print('dgl', dgl.__version__)"
+bash "$REPO_ROOT/scripts/verify_se3nv_rfdiffusion.sh"
 
 echo "=== RFdiffusion install complete ==="
 echo "Finished: $(date)"

@@ -36,12 +36,10 @@ if [[ $TORCH_OK -eq 1 ]] \
     conda activate SE3nv
 elif conda env list | awk '{print $1}' | grep -qx "SE3nv"; then
     if [[ $TORCH_OK -eq 0 ]]; then
-        echo "SE3nv has incompatible torch (need 1.9.x). Run: bash scripts/repair_se3nv_torch.sh"
+        echo "SE3nv has incompatible torch (need 1.9.x). Run: bash scripts/repair_se3nv.sh"
         echo "Attempting in-place PyTorch repair now..."
         conda activate SE3nv
-        pip uninstall -y torch torchvision torchaudio dgl dglgo 2>/dev/null || true
-        bash "$(dirname "$0")/install_se3nv_torch_pip.sh"
-        bash "$(dirname "$0")/repair_se3nv_dgl.sh"
+        bash "$(dirname "$0")/repair_se3nv.sh"
         RESUME=1
         conda activate SE3nv
     else
@@ -113,7 +111,7 @@ try:
     if major >= 2:
         raise RuntimeError(
             f"torch {torch.__version__} is incompatible with RFdiffusion; need 1.9.x. "
-            "Run: bash scripts/repair_se3nv_torch.sh"
+            "Run: bash scripts/repair_se3nv.sh"
         )
     print("torch", torch.__version__, "cuda", torch.cuda.is_available())
     print("dgl", dgl.__version__)
@@ -131,7 +129,7 @@ export LD_LIBRARY_PATH="$_SAVED_LD"
 
 if [[ $VERIFY_RC -ne 0 ]]; then
     echo "WARN: verify exited $VERIFY_RC — try on GPU: source scripts/rfdiffusion_env.sh"
-    echo "      If DGL import failed: bash scripts/repair_se3nv_dgl.sh"
+    echo "      If DGL import failed: bash scripts/repair_se3nv.sh"
 fi
 
 echo "=== Longleaf RFdiffusion install complete ==="
