@@ -56,11 +56,10 @@ if [[ $RESUME -eq 0 ]]; then
     echo "Step 2/6: Installing PyTorch 1.9 + CUDA 11.1 (pip cu111; conda solve fails on py3.9)..."
     bash "$(dirname "$0")/install_se3nv_torch_pip.sh"
 
-    echo "Step 3/6: cudatoolkit + DGL (cu111) + hydra..."
+    echo "Step 3/6: cudatoolkit + DGL (cu111 pip) + hydra..."
     conda install -y --override-channels -c conda-forge cudatoolkit=11.1.1
-    if ! conda install -y -c dglteam -c conda-forge "dgl-cuda11.1=0.9.1post1"; then
-        pip install --no-cache-dir "dgl==1.0.0" -f https://data.dgl.ai/wheels/cu111/repo.html
-    fi
+    pip install --no-cache-dir "dgl==1.0.0" -f https://data.dgl.ai/wheels/cu111/repo.html \
+        || pip install --no-cache-dir "dgl==1.1.2" -f https://data.dgl.ai/wheels/torch-1.9/cu111/repo.html
     pip install hydra-core pyrsistent "torchdata==0.9.0" --no-deps
     pip install "numpy==1.23.5" "scipy==1.10.1"
 
