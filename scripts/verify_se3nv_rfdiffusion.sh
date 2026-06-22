@@ -53,7 +53,9 @@ u = torch.tensor([0, 1], device=dev)
 dst = torch.tensor([1, 2], device=dev)
 g = dgl.graph((u, dst)).to(dev)
 _ = g.num_edges()
+_ = g.edges()  # same failure mode as RFdiffusion if DGL lacks CUDA ops
 
+print(f"DGL at {dgl.__file__}")
 print(f"OK: torch {torch.__version__}, numpy {np.__version__}, dgl {dgl.__version__}, rfdiffusion import")
 PY
 

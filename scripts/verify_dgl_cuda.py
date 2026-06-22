@@ -18,6 +18,8 @@ def main() -> int:
         g = dgl.graph((u, v))
         g = g.to(dev)
         _ = g.num_edges()
+        # Same code path as RFdiffusion SE3 transformer (graph.edges on CUDA).
+        _ = g.edges()
     except Exception as exc:
         print(f"ERROR: DGL CUDA graph ops failed: {exc}")
         print("Fix: bash scripts/repair_se3nv.sh")

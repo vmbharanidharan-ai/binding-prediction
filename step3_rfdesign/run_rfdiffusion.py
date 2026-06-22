@@ -85,13 +85,14 @@ def _build_inference_shell_cmd(
     inference_invocation: str,
     hydra_args: list,
 ) -> str:
-    """Assemble a login-shell command with shell-safe quoting for Hydra overrides."""
+    """Assemble a shell command with safe quoting for Hydra overrides (non-login shell)."""
     quoted = " ".join(shlex.quote(arg) for arg in hydra_args)
     body = f"cd {shlex.quote(str(rfdiff_root))} && {inference_invocation} {quoted}"
     if rfdiff_env_sh and rfdiff_env_sh.exists():
         return (
             f"unset VIRTUAL_ENV; "
-            f"source {shlex.quote(str(rfdiff_env_sh))} && {body}"
+            f"source {shlex.quote(str(rfdiff_env_sh))} && "
+            f"export LD_LIBRARY_PATH=${{CONDA_PREFIX}}/lib && {body}"
         )
     return body
 
@@ -185,7 +186,7 @@ def run_rfdiffusion(
 
         try:
             result = subprocess.run(
-                ["bash", "-lc", bash_cmd],
+                ["bash", "-c", bash_cmd],
                 check=True,
                 capture_output=True,
                 text=True,
