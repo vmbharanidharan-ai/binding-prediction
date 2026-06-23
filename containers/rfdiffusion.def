@@ -60,8 +60,26 @@ export DGLBACKEND=pytorch
 
     pip install --no-cache-dir numpy==1.23.5 scipy==1.10.1
 
+    # CUDA 11.1 DGL only — must use --no-index or pip installs CPU wheel from PyPI
     pip install --no-cache-dir dgl==1.0.0 \
-        -f https://data.dgl.ai/wheels/cu111/repo.html
+        --no-index \
+        --find-links https://data.dgl.ai/wheels/cu111/repo.html
+
+    python - <<'PYEOF'
+import glob
+import os
+import sys
+
+libs = glob.glob("/usr/local/lib/python3.9/dist-packages/dgl/libdgl.so")
+if not libs:
+    print("ERROR: libdgl.so not found after DGL install")
+    sys.exit(1)
+size_mb = os.path.getsize(libs[0]) / (1024 * 1024)
+print(f"libdgl.so size: {size_mb:.1f} MB")
+if size_mb < 20:
+    print("ERROR: DGL looks like CPU build (libdgl.so too small); need cu111 wheel")
+    sys.exit(1)
+PYEOF
 
     pip install --no-cache-dir \
         networkx requests tqdm psutil charset-normalizer pillow
