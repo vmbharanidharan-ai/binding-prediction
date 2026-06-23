@@ -106,6 +106,37 @@ fi
 echo "DGL CUDA OK"
 echo ""
 
+echo "Pre-flight: GPU architecture + e3nn NVRTC (torch 1.9.1+cu111)..."
+if ! "$RUNNER" exec --nv "${BIND_ARGS[@]}" "$CONTAINER" python - <<'PYEOF'
+import torch
+
+if not torch.cuda.is_available():
+    raise RuntimeError("CUDA not available in container")
+
+major, minor = torch.cuda.get_device_capability()
+name = torch.cuda.get_device_name(torch.cuda.current_device())
+print(f"GPU {name} compute capability {major}.{minor}")
+
+# torch 1.9.1+cu111 / CUDA 11.1 NVRTC cannot JIT for Ada (L40S sm_89) or Hopper+.
+if major > 8 or (major == 8 and minor >= 9):
+    raise RuntimeError(
+        f"GPU {name} (sm_{major}{minor}) is incompatible with RFdiffusion container "
+        f"(torch 1.9.1+cu111). Resubmit Step 3 on volta-gpu (V100) or a100-gpu only."
+    )
+
+from e3nn import o3
+
+x = torch.randn(16, 3, device="cuda")
+_ = o3.spherical_harmonics(2, x, normalize=True)
+print("e3nn spherical_harmonics NVRTC OK")
+PYEOF
+then
+    echo "ERROR: GPU architecture pre-flight failed (see message above)"
+    exit 1
+fi
+echo "GPU architecture OK"
+echo ""
+
 # Hydra defaults write to outputs/ under --pwd (/opt/rfdiffusion), which is read-only.
 HYDRA_RUN_DIR="${RFDIFFUSION_HYDRA_DIR:-/tmp/rfdiffusion_hydra}"
 mkdir -p "$HYDRA_RUN_DIR"

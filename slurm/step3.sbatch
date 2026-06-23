@@ -3,9 +3,11 @@
 #SBATCH --output=logs/step3_%j.out
 #SBATCH --error=logs/step3_%j.err
 #SBATCH --time=12:00:00
-#SBATCH --mem=64G
+#SBATCH --mem=32G
 #SBATCH --gres=gpu:1
-#SBATCH --partition=volta-gpu,a100-gpu,gpu,l40-gpu
+# RFdiffusion container uses torch 1.9.1+cu111 — incompatible with L40S/H100 (sm_89+).
+# Use V100 (volta-gpu) or A100 only; do not add l40-gpu or generic gpu here.
+#SBATCH --partition=volta-gpu,a100-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --cpus-per-task=8
 
