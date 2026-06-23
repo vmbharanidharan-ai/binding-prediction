@@ -21,6 +21,7 @@ export LC_ALL=C
 export LANG=C.UTF-8
 export CUDA_HOME=/usr/local/cuda-11.1
 export LD_LIBRARY_PATH=/usr/local/cuda-11.1/lib64:${LD_LIBRARY_PATH:-}
+export DGLBACKEND=pytorch
 
 %post
     # Non-interactive apt (avoids tzdata timezone prompt hanging automated builds)
@@ -75,13 +76,17 @@ export LD_LIBRARY_PATH=/usr/local/cuda-11.1/lib64:${LD_LIBRARY_PATH:-}
     # SE3Transformer from RFdiffusion tree (pins e3nn==0.3.3 via requirements.txt)
     cd env/SE3Transformer
     pip install --no-cache-dir -r requirements.txt
-    python setup.py install
-    python -c "import se3_transformer; print('SE3Transformer OK')" || exit 1
+    # pip install (not setup.py install) — setup.py puts files in site-packages
+    # that may not be on sys.path; cwd-only import falsely passes verify step
+    pip install --no-cache-dir --no-build-isolation .
     cd /opt/rfdiffusion
+    python -c "import se3_transformer; print('SE3Transformer OK:', se3_transformer.__file__)" || exit 1
 
     # --no-deps: se3-transformer is not on PyPI; already installed from source above
     pip install --no-cache-dir --no-deps -e .
+    cd /opt/rfdiffusion
     python -c "import rfdiffusion; print(f'RFdiffusion OK: {rfdiffusion.__file__}')" || exit 1
+    python -c "import se3_transformer; print(f'SE3Transformer path: {se3_transformer.__file__}')" || exit 1
 
     python - <<'PYEOF'
 import sys
