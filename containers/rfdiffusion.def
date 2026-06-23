@@ -62,10 +62,12 @@ export DGLBACKEND=pytorch
 
     # CUDA DGL: cu111 wheels removed from data.dgl.ai (Access Denied).
     # Use cu113 wheel (~259 MB); compatible with torch 1.9.1+cu111 on Longleaf GPUs.
-    wget -q -O /tmp/dgl_cu113.whl \
+    DGL_WHEEL=/tmp/dgl-1.0.0+cu113-cp39-cp39-manylinux1_x86_64.whl
+    wget -O "$DGL_WHEEL" \
         "https://data.dgl.ai/wheels/cu113/dgl-1.0.0%2Bcu113-cp39-cp39-manylinux1_x86_64.whl"
-    pip install --no-cache-dir /tmp/dgl_cu113.whl
-    rm -f /tmp/dgl_cu113.whl
+    test -s "$DGL_WHEEL" || { echo "ERROR: DGL wheel download failed"; exit 1; }
+    pip install --no-cache-dir "$DGL_WHEEL"
+    rm -f "$DGL_WHEEL"
 
     python - <<'PYEOF'
 import glob
