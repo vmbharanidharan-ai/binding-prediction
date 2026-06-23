@@ -2,11 +2,9 @@
 
 import argparse
 import os
-import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -16,29 +14,41 @@ from utils.logging import setup_logger
 from utils.slurm_utils import filter_pending, get_completed_ids, load_config
 
 
-def _resolve_inference_invocation(rfdiff_root: Path, step_cfg: dict) -> str:
-    """Return python invocation for run_inference.py relative to RFDIFFUSION_ROOT."""
-    cmd = str(step_cfg.get("rfdiffusion_cmd", "python scripts/run_inference.py")).strip()
-    script = cmd.split(maxsplit=1)[1] if cmd.startswith("python ") else cmd
-    script_path = Path(script)
+def _resolve_container_image(step_cfg: dict) -> str:
+    """Resolve Apptainer image path from config or environment."""
+    raw = (
+        step_cfg.get("container_image")
+        or os.environ.get("RFDIFFUSION_CONTAINER")
+        or ""
+    )
+    if not raw:
+        project_root = os.environ.get("PROJECT_ROOT", "")
+        if project_root:
+            return str(Path(project_root) / "rfdiffusion.sif")
+        raise FileNotFoundError(
+            "RFdiffusion container not found. Set RFDIFFUSION_CONTAINER or step3.container_image."
+        )
+    path = str(raw).strip().rstrip("}")
+    path = path.replace("${PROJECT_ROOT}", os.environ.get("PROJECT_ROOT", ""))
+    if not Path(path).exists():
+        raise FileNotFoundError(f"RFdiffusion container not found: {path}")
+    return path
 
-    if script_path.is_absolute():
-        return f"python {script_path}"
 
-    parts = script_path.parts
-    if parts and parts[0].lower() == "rfdiffusion":
-        script_path = Path(*parts[1:])
-
-    candidate = rfdiff_root / script_path
-    if not candidate.exists():
-        candidate = rfdiff_root / "scripts" / "run_inference.py"
-    if not candidate.exists():
-        raise FileNotFoundError(f"RFdiffusion inference script not found under {rfdiff_root}")
-    return f"python {candidate.relative_to(rfdiff_root)}"
+def _build_container_cmd(
+    repo_root: Path,
+    container_image: str,
+    hydra_args: list,
+) -> list:
+    """Build argv for scripts/run_rfdiffusion_container.sh with Hydra overrides."""
+    wrapper = repo_root / "scripts" / "run_rfdiffusion_container.sh"
+    if not wrapper.exists():
+        raise FileNotFoundError(f"Container wrapper not found: {wrapper}")
+    return ["bash", str(wrapper), *hydra_args]
 
 
 def _resolve_weights_dir(rfdiff_root: Path, step_cfg: dict) -> str:
-    """Resolve RFdiffusion model checkpoint directory."""
+    """Resolve RFdiffusion model checkpoint directory (bind-mounted into container)."""
     for candidate in (
         step_cfg.get("rfdiffusion_weights"),
         os.environ.get("RFDIFFUSION_WEIGHTS"),
@@ -77,24 +87,6 @@ def _hydra_overrides(
     if hotspot_res:
         overrides.append(f"ppi.hotspot_res=[{hotspot_res}]")
     return overrides
-
-
-def _build_inference_shell_cmd(
-    rfdiff_root: Path,
-    rfdiff_env_sh: Optional[Path],
-    inference_invocation: str,
-    hydra_args: list,
-) -> str:
-    """Assemble a shell command with safe quoting for Hydra overrides (non-login shell)."""
-    quoted = " ".join(shlex.quote(arg) for arg in hydra_args)
-    body = f"cd {shlex.quote(str(rfdiff_root))} && {inference_invocation} {quoted}"
-    if rfdiff_env_sh and rfdiff_env_sh.exists():
-        return (
-            f"unset VIRTUAL_ENV; "
-            f"source {shlex.quote(str(rfdiff_env_sh))} && "
-            f"export LD_LIBRARY_PATH=${{CONDA_PREFIX}}/lib:${{CONDA_PREFIX}}/lib64 && {body}"
-        )
-    return body
 
 
 def _write_job_log(job_out: Path, result, label: str) -> None:
@@ -160,24 +152,21 @@ def run_rfdiffusion(
             )
         )
         weights_dir = _resolve_weights_dir(rfdiff_root, step_cfg)
-        hydra_args = _hydra_overrides(row, job_out, design_id, weights_dir, step_cfg)
+        container_weights = str(
+            step_cfg.get("container_weights_path", "/opt/rfdiffusion/models")
+        ).strip()
         hotspot_res = str(row.get("hotspot_res", "") or "").strip()
         if hotspot_res:
             logger.info(f"RFdiffusion hotspots for {design_id}: {hotspot_res}")
 
         repo_root = Path(__file__).resolve().parent.parent
-        rfdiff_env_sh = repo_root / "scripts" / "rfdiffusion_env.sh"
-        inference_invocation = _resolve_inference_invocation(rfdiff_root, step_cfg)
-
-        bash_cmd = _build_inference_shell_cmd(
-            rfdiff_root,
-            rfdiff_env_sh if rfdiff_env_sh.exists() else None,
-            inference_invocation,
-            hydra_args,
-        )
+        container_image = _resolve_container_image(step_cfg)
+        hydra_args = _hydra_overrides(row, job_out, design_id, container_weights, step_cfg)
+        cmd = _build_container_cmd(repo_root, container_image, hydra_args)
 
         logger.info(f"Running RFdiffusion: {design_id}")
-        logger.info(f"RFdiffusion shell command: {bash_cmd}")
+        logger.info(f"Container: {container_image}")
+        logger.info(f"RFdiffusion command: {' '.join(cmd)}")
         if dry_run:
             status_rows.append(
                 {"design_id": design_id, "status": "dry_run", "output_dir": str(job_out)}
@@ -185,11 +174,14 @@ def run_rfdiffusion(
             continue
 
         try:
+            env = os.environ.copy()
+            env["RFDIFFUSION_CONTAINER"] = container_image
             result = subprocess.run(
-                ["bash", "-c", bash_cmd],
+                cmd,
                 check=True,
                 capture_output=True,
                 text=True,
+                env=env,
             )
             _write_job_log(job_out, result, "success")
             if result.stdout:

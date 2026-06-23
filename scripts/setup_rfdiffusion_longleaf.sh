@@ -1,11 +1,8 @@
 #!/bin/bash
-# RFdiffusion install helper for Longleaf.
-#
-# Phase 1 (login): clone RFdiffusion
-# Phase 2 (GPU node via sbatch): create SE3nv env + weights
+# One-time RFdiffusion setup: clone weights repo + build Apptainer container.
 #
 # Usage:
-#   export PROJECT_ROOT=/work/users/v/m/vmbharan/.../minibinder_prediction
+#   export PROJECT_ROOT=/work/users/$USER/your_dataset/minibinder_prediction
 #   cd $PROJECT_ROOT/binding-prediction
 #   bash scripts/setup_rfdiffusion_longleaf.sh
 
@@ -13,39 +10,44 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
 PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$REPO_ROOT/.." && pwd)}"
-RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-$PROJECT_ROOT/RFdiffusion}"
-RFDIFFUSION_WEIGHTS="${RFDIFFUSION_WEIGHTS:-$PROJECT_ROOT/rfdiffusion_weights}"
+RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"
 
-echo "PROJECT_ROOT=$PROJECT_ROOT"
-echo "RFDIFFUSION_ROOT=$RFDIFFUSION_ROOT"
-echo "RFDIFFUSION_WEIGHTS=$RFDIFFUSION_WEIGHTS"
-echo "REPO_ROOT=$REPO_ROOT"
+echo "=== RFdiffusion setup (Apptainer) ==="
+echo "PROJECT_ROOT:    $PROJECT_ROOT"
+echo "RFDIFFUSION_ROOT: $RFDIFFUSION_ROOT"
+echo ""
 
 if [[ ! -d "$RFDIFFUSION_ROOT/.git" ]]; then
+    echo "Cloning RFdiffusion..."
     git clone https://github.com/RosettaCommons/RFdiffusion.git "$RFDIFFUSION_ROOT"
 else
-    echo "RFdiffusion repo already exists at $RFDIFFUSION_ROOT"
+    echo "RFdiffusion repo present: $RFDIFFUSION_ROOT"
 fi
 
-mkdir -p "$REPO_ROOT/logs"
+if [[ ! -d "${RFDIFFUSION_ROOT}/models" ]] || [[ -z "$(ls -A "${RFDIFFUSION_ROOT}/models"/*.pt 2>/dev/null)" ]]; then
+    echo ""
+    echo "Download model weights into ${RFDIFFUSION_ROOT}/models/"
+    echo "  See: https://github.com/RosettaCommons/RFdiffusion#model-weights"
+    echo "  Example: bash scripts/download_rfdiffusion_weights.sh"
+fi
+
+CONTAINER="${PROJECT_ROOT}/rfdiffusion.sif"
+if [[ -f "$CONTAINER" ]]; then
+    echo ""
+    echo "Container already built: $CONTAINER"
+    ls -lh "$CONTAINER"
+else
+    echo ""
+    echo "Container not found. Build on a GPU node:"
+    echo "  sbatch slurm/build_rfdiffusion_container.sbatch"
+    echo "  # or interactively:"
+    echo "  srun --partition=gpu --gres=gpu:1 --mem=32G --time=01:00:00 --pty bash"
+    echo "  bash scripts/build_rfdiffusion_container.sh"
+fi
 
 echo ""
-echo "SE3nv env should be created on a GPU node (DGL + CUDA)."
-echo "Submitting install job to SLURM..."
+echo "After build, verify on GPU:"
+echo "  bash scripts/verify_rfdiffusion_container.sh"
 echo ""
-
-cd "$REPO_ROOT"
-export PROJECT_ROOT RFDIFFUSION_ROOT RFDIFFUSION_WEIGHTS
-unset SBATCH_QOS SLURM_QOS 2>/dev/null || true
-
-JOB_ID=$(sbatch --export=ALL slurm/setup_rfdiffusion_install.sbatch | awk '{print $NF}')
-echo "Submitted install job: $JOB_ID"
-echo ""
-echo "Monitor:"
-echo "  squeue -u \$USER"
-echo "  tail -f $REPO_ROOT/logs/rfdiffusion_install_${JOB_ID}.out"
-echo ""
-echo "When install finishes, verify on a GPU node:"
-echo "  bash scripts/verify_se3nv_rfdiffusion.sh"
+echo "=== Setup instructions complete ==="

@@ -1,0 +1,88 @@
+Bootstrap: docker
+From: nvidia/cuda:11.1.1-runtime-ubuntu20.04
+
+# RFdiffusion Apptainer image for Longleaf GPU nodes.
+# Build (on GPU node): apptainer build --nv rfdiffusion.sif containers/rfdiffusion.def
+# Test: apptainer exec --nv rfdiffusion.sif python -c "import torch, dgl, rfdiffusion"
+
+%help
+RFdiffusion GPU container: torch 1.9.1+cu111, DGL 1.0.0, SE3Transformer, RFdiffusion.
+Model weights are bind-mounted at runtime from host RFdiffusion/models.
+
+%labels
+Author "binding-prediction"
+Version "1.0"
+PyTorch "1.9.1+cu111"
+CUDA "11.1"
+Python "3.9"
+
+%environment
+export LC_ALL=C
+export LANG=C.UTF-8
+export CUDA_HOME=/usr/local/cuda-11.1
+export LD_LIBRARY_PATH=/usr/local/cuda-11.1/lib64:${LD_LIBRARY_PATH:-}
+
+%post
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        git \
+        wget \
+        libopenmpi-dev \
+        openmpi-bin \
+        pkg-config \
+        libhdf5-dev \
+        libssl-dev \
+        libffi-dev \
+        python3.9 \
+        python3.9-dev \
+        python3.9-distutils \
+        python3-pip
+
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.9 1
+    update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+    python -m pip install --upgrade pip setuptools wheel
+
+    pip install --no-cache-dir \
+        torch==1.9.1+cu111 \
+        torchvision==0.10.1+cu111 \
+        torchaudio==0.9.1 \
+        -f https://download.pytorch.org/whl/torch_stable.html
+
+    pip install --no-cache-dir numpy==1.23.5 scipy==1.10.1
+
+    pip install --no-cache-dir dgl==1.0.0 \
+        -f https://data.dgl.ai/wheels/cu111/repo.html
+
+    pip install --no-cache-dir \
+        networkx requests tqdm psutil charset-normalizer pillow \
+        hydra-core pyrsistent omegaconf e3nn
+
+    mkdir -p /opt/rfdiffusion
+    cd /opt/rfdiffusion
+    git clone --depth 1 https://github.com/RosettaCommons/RFdiffusion.git .
+
+    cd env/SE3Transformer
+    pip install --no-cache-dir -r requirements.txt
+    python setup.py install
+    cd /opt/rfdiffusion
+
+    pip install --no-cache-dir -e .
+
+    python - <<'PYEOF'
+import torch, numpy, scipy, dgl, hydra, rfdiffusion
+print(f"torch {torch.__version__}")
+print(f"numpy {numpy.__version__}")
+print(f"scipy {scipy.__version__}")
+print(f"dgl {dgl.__version__}")
+print(f"hydra {hydra.__version__}")
+print(f"rfdiffusion {rfdiffusion.__file__}")
+PYEOF
+
+    apt-get clean
+    rm -rf /var/lib/apt/lists/* /root/.cache/pip
+
+%runscript
+    exec python "$@"

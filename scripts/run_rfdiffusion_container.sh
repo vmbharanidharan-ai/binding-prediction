@@ -1,0 +1,109 @@
+#!/bin/bash
+# Run RFdiffusion inference inside an Apptainer/Singularity container.
+# Called by step3_rfdesign/run_rfdiffusion.py (neo_binder orchestration).
+#
+# Usage:
+#   bash run_rfdiffusion_container.sh inference.input_pdb=... contigmap.contigs=[...] ...
+#
+# Environment:
+#   RFDIFFUSION_CONTAINER  — path to .sif (default: $PROJECT_ROOT/rfdiffusion.sif)
+#   RFDIFFUSION_ROOT       — host RFdiffusion clone (weights bind-mounted)
+#   PROJECT_ROOT           — dataset project root on Longleaf
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+CONTAINER="${RFDIFFUSION_CONTAINER:-}"
+if [[ -z "$CONTAINER" ]]; then
+    if [[ -n "${PROJECT_ROOT:-}" && -f "${PROJECT_ROOT}/rfdiffusion.sif" ]]; then
+        CONTAINER="${PROJECT_ROOT}/rfdiffusion.sif"
+    elif [[ -f "$REPO_ROOT/../rfdiffusion.sif" ]]; then
+        CONTAINER="$(cd "$REPO_ROOT/.." && pwd)/rfdiffusion.sif"
+    else
+        echo "ERROR: Container not found. Set RFDIFFUSION_CONTAINER or build rfdiffusion.sif"
+        echo "  bash scripts/build_rfdiffusion_container.sh"
+        exit 1
+    fi
+fi
+
+if [[ ! -f "$CONTAINER" ]]; then
+    echo "ERROR: Container not found: $CONTAINER"
+    exit 1
+fi
+
+if [[ $# -lt 1 ]]; then
+    echo "Usage: $0 <hydra_override> [hydra_override ...]"
+    exit 1
+fi
+
+# Apptainer on Longleaf; fall back to singularity.
+RUNNER=""
+if command -v apptainer &>/dev/null; then
+    RUNNER=apptainer
+elif command -v singularity &>/dev/null; then
+    RUNNER=singularity
+else
+    module load apptainer 2>/dev/null || module load singularity 2>/dev/null || true
+    if command -v apptainer &>/dev/null; then
+        RUNNER=apptainer
+    elif command -v singularity &>/dev/null; then
+        RUNNER=singularity
+    else
+        echo "ERROR: apptainer or singularity not found (try: module load apptainer)"
+        exit 1
+    fi
+fi
+
+RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT:-}/RFdiffusion}"
+INFERENCE_SCRIPT="${RFDIFFUSION_INFERENCE_SCRIPT:-/opt/rfdiffusion/scripts/run_inference.py}"
+
+BIND_ARGS=(
+    --bind /work:/work
+    --bind /nas:/nas
+)
+if [[ -d /proj ]]; then
+    BIND_ARGS+=(--bind /proj:/proj)
+fi
+if [[ -d /scratch ]]; then
+    BIND_ARGS+=(--bind /scratch:/scratch)
+fi
+if [[ -n "${RFDIFFUSION_ROOT}" && -d "${RFDIFFUSION_ROOT}/models" ]]; then
+    BIND_ARGS+=(--bind "${RFDIFFUSION_ROOT}/models:/opt/rfdiffusion/models:ro")
+fi
+
+GPU_NAME="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo N/A)"
+
+echo "=========================================="
+echo "RFdiffusion Inference (Apptainer)"
+echo "=========================================="
+echo "Container:  $CONTAINER"
+echo "Runner:     $RUNNER"
+echo "Script:     $INFERENCE_SCRIPT"
+echo "GPU:        $GPU_NAME"
+echo "Weights:    ${RFDIFFUSION_ROOT}/models → /opt/rfdiffusion/models"
+echo ""
+
+echo "Pre-flight: DGL CUDA test..."
+if ! "$RUNNER" exec --nv "${BIND_ARGS[@]}" "$CONTAINER" python - <<'PYEOF'
+import torch
+import dgl
+
+if not torch.cuda.is_available():
+    raise RuntimeError("CUDA not available in container")
+g = dgl.graph(([0], [1])).to("cuda")
+src, dst = g.edges()
+if len(src) < 1:
+    raise RuntimeError("DGL CUDA graph.edges() failed")
+PYEOF
+then
+    echo "ERROR: Container DGL CUDA pre-flight failed"
+    exit 1
+fi
+echo "DGL CUDA OK"
+echo ""
+
+echo "Running inference..."
+"$RUNNER" exec --nv "${BIND_ARGS[@]}" --pwd /opt/rfdiffusion "$CONTAINER" \
+    python "$INFERENCE_SCRIPT" "$@"

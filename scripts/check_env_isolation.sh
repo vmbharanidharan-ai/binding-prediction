@@ -25,7 +25,6 @@ check_conda() {
 }
 
 check_conda neo_binder
-check_conda SE3nv
 check_conda proteinmpnn
 
 if [[ -f "$PROJECT_ROOT/alphafoldenv/bin/python" ]]; then
@@ -38,17 +37,21 @@ else
 fi
 echo ""
 
-echo "--- After sourcing rfdiffusion_env.sh (SE3nv runtime) ---"
-export PROJECT_ROOT
-# shellcheck source=scripts/rfdiffusion_env.sh
-source "$SCRIPT_DIR/rfdiffusion_env.sh"
-echo "which python: $(which python)"
-echo "LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-<unset>}"
-python -c "import dgl; print('dgl', dgl.__version__, dgl.__file__)"
-if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
-    python "$SCRIPT_DIR/verify_dgl_cuda.py"
+CONTAINER="${RFDIFFUSION_CONTAINER:-${PROJECT_ROOT}/rfdiffusion.sif}"
+echo "--- RFdiffusion container ---"
+if [[ -f "$CONTAINER" ]]; then
+    ls -lh "$CONTAINER"
+    if command -v apptainer &>/dev/null || command -v singularity &>/dev/null; then
+        module load apptainer 2>/dev/null || true
+        RUNNER="$(command -v apptainer || command -v singularity)"
+        "$RUNNER" exec "$CONTAINER" python -c "import rfdiffusion; print('rfdiffusion', rfdiffusion.__file__)"
+    else
+        echo "(apptainer not loaded — skip import test)"
+    fi
 else
-    echo "(skip DGL CUDA test — no GPU on this node)"
+    echo "MISSING: $CONTAINER"
+    echo "Build: sbatch slurm/build_rfdiffusion_container.sbatch"
 fi
 
+echo ""
 echo "=== Done ==="

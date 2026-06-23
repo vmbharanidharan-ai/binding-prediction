@@ -9,26 +9,41 @@
 #SBATCH --qos=gpu_access
 #SBATCH --cpus-per-task=8
 
-# Step 3: RFdiffusion binder design (GPU)
+# Step 3: RFdiffusion binder design (GPU, Apptainer container)
 # Output: work/step3_binders/binder_designs.tsv
 #
 # Orchestration: neo_binder (run_pipeline.py)
-# RFdiffusion inference: SE3nv (subprocess via scripts/rfdiffusion_env.sh)
+# RFdiffusion inference: Apptainer (scripts/run_rfdiffusion_container.sh)
 
 # shellcheck source=slurm/common_paths.sh
 source "${SLURM_SUBMIT_DIR}/slurm/common_paths.sh"
 
+module load apptainer 2>/dev/null || module load singularity 2>/dev/null || true
+
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate neo_binder
 
-echo "=== Step 3: RFdiffusion ==="
-echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
-echo "Pipeline python: $(which python)"
+echo "=========================================="
+echo "Step 3: RFdiffusion Binder Design"
+echo "=========================================="
+echo "Executor:      neo_binder (Python)"
+echo "GPU:           $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
+echo "Pipeline dir:  $(pwd)"
+echo "Pipeline env:  $(which python)"
+echo ""
 
-# Preflight SE3nv on this GPU (separate env from neo_binder orchestration).
-bash "${SLURM_SUBMIT_DIR}/scripts/verify_se3nv_rfdiffusion.sh"
+export RFDIFFUSION_CONTAINER="${RFDIFFUSION_CONTAINER:-${PROJECT_ROOT}/rfdiffusion.sif}"
+echo "Container:     $RFDIFFUSION_CONTAINER"
+if [[ ! -f "$RFDIFFUSION_CONTAINER" ]]; then
+    echo "ERROR: Container not found at $RFDIFFUSION_CONTAINER"
+    echo "Build with: sbatch slurm/build_rfdiffusion_container.sbatch"
+    exit 1
+fi
+echo "Container OK"
+echo ""
 
-echo "Pipeline python (after preflight): $(which python)"
+bash "${SLURM_SUBMIT_DIR}/scripts/verify_rfdiffusion_container.sh"
 
+echo "Input:         $INPUT_TSV"
 python run_pipeline.py --step step3 --input "$INPUT_TSV"
 echo "=== Step 3 complete ==="

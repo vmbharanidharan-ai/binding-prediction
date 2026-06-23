@@ -347,37 +347,31 @@ Each step writes status TSVs and `done.flag` files. Re-submitting a SLURM job sk
 
 ### RFdiffusion (Step 3)
 
-One-time setup on Longleaf:
+RFdiffusion runs in an **Apptainer container** (no conda `SE3nv` env). One-time setup per dataset:
 
 ```bash
-export PROJECT_ROOT=/work/users/$USER/minibinder_prediction
+export PROJECT_ROOT=/work/users/$USER/your_dataset/minibinder_prediction
 cd $PROJECT_ROOT/binding-prediction
 
-# Login node: clone repo + submit GPU install job
+# Login node: clone RFdiffusion + download weights
 bash scripts/setup_rfdiffusion_longleaf.sh
-squeue -u $USER
-tail -f logs/rfdiffusion_install_*.out
 
-# GPU node: verify SE3nv (must run on GPU — fails on login node)
-srun --partition=a100-gpu,l40-gpu,volta-gpu,gpu --qos=gpu_access \
-     --gres=gpu:1 --mem=32G --time=00:30:00 --pty bash
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate SE3nv
-export PROJECT_ROOT=...
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib
-cd $PROJECT_ROOT/binding-prediction
-bash scripts/verify_se3nv_rfdiffusion.sh
+# GPU node: build container (~40 min, one-time)
+sbatch slurm/build_rfdiffusion_container.sbatch
+# or interactively:
+srun --partition=gpu --gres=gpu:1 --mem=32G --time=01:00:00 --pty bash
+bash scripts/build_rfdiffusion_container.sh
 
-# If verify fails:
-bash scripts/repair_se3nv.sh
+# Verify on GPU before Step 3
+bash scripts/verify_rfdiffusion_container.sh
 ```
 
-Installs:
-- Repo at `$PROJECT_ROOT/RFdiffusion`
-- Conda env `SE3nv` (PyTorch 1.9 + numpy/scipy 1.23/1.10 + DGL + RFdiffusion)
-- Weights in `RFdiffusion/models/*.pt`
+Requires:
+- `$PROJECT_ROOT/rfdiffusion.sif` (Apptainer image, ~2–3 GB)
+- `$PROJECT_ROOT/RFdiffusion/models/*.pt` (checkpoint weights, bind-mounted at runtime)
+- `module load apptainer` on Longleaf GPU nodes
 
-Step 3 SLURM uses `neo_binder` for orchestration and `SE3nv` inside the RFdiffusion subprocess (`scripts/rfdiffusion_env.sh`). `alphafoldenv` is **not** on `PATH` during Step 3.
+Step 3 SLURM uses `neo_binder` for orchestration and invokes RFdiffusion via `scripts/run_rfdiffusion_container.sh`.
 
 ### ProteinMPNN (Step 3.5)
 
