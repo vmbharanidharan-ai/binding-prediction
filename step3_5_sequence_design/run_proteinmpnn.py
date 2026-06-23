@@ -48,6 +48,17 @@ def infer_binder_chain(
     if len(lengths) == 1:
         return next(iter(lengths))
 
+    # RFdiffusion often outputs binder + merged receptor (2 chains), not peptide/HLA/binder.
+    in_range = [
+        (chain, length)
+        for chain, length in lengths.items()
+        if binder_length_min <= length <= binder_length_max
+    ]
+    if len(in_range) == 1:
+        return in_range[0][0]
+    if len(in_range) > 1:
+        return max(in_range, key=lambda item: item[1])[0]
+
     sorted_chains = sorted(lengths.items(), key=lambda item: item[1])
     peptide_chain = sorted_chains[0][0]
     hla_chain = sorted_chains[-1][0]
@@ -143,6 +154,7 @@ def run_proteinmpnn_design(
         raise FileNotFoundError(
             f"ProteinMPNN not found at {mpnn_root}. Run: bash scripts/setup_proteinmpnn_longleaf.sh"
         )
+    logger.info(f"ProteinMPNN root: {mpnn_root}")
 
     binders = pd.read_csv(binder_designs_tsv, sep="\t")
     if "backbone_id" not in binders.columns:
@@ -206,7 +218,12 @@ def run_proteinmpnn_design(
                 str(step_cfg.get("binder_chain", "auto")),
             )
         except ValueError as exc:
-            logger.error(f"Binder chain inference failed for {backbone_id}: {exc}")
+            logger.error(
+                "Binder chain inference failed for %s (chains=%s): %s",
+                backbone_id,
+                _chain_lengths(backbone_pdb),
+                exc,
+            )
             status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "failed"})
             continue
 
