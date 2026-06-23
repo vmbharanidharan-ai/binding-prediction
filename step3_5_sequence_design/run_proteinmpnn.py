@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -144,6 +145,10 @@ def run_proteinmpnn_design(
         )
 
     binders = pd.read_csv(binder_designs_tsv, sep="\t")
+    if "backbone_id" not in binders.columns:
+        binders["backbone_id"] = binders["backbone_pdb"].map(
+            lambda p: Path(str(p)).stem if p and str(p) != "nan" else ""
+        )
     contigs = pd.read_csv(contig_manifest_tsv, sep="\t")
     contig_cols = [c for c in [
         "design_id", "job_id", "peptide", "allele",
@@ -154,8 +159,9 @@ def run_proteinmpnn_design(
     out_root = Path(output_dir)
     out_root.mkdir(parents=True, exist_ok=True)
     status_path = out_root / "proteinmpnn_status.tsv"
-    completed = get_completed_ids(str(status_path), "design_id") if restart else set()
-    pending = filter_pending(merged, completed, "design_id")
+    id_column = "backbone_id"
+    completed = get_completed_ids(str(status_path), id_column) if restart else set()
+    pending = filter_pending(merged, completed, id_column)
 
     if pending.empty:
         logger.info("All ProteinMPNN jobs completed (restart-safe skip).")
@@ -172,27 +178,37 @@ def run_proteinmpnn_design(
 
     for _, row in pending.iterrows():
         design_id = row["design_id"]
+        backbone_id = str(row["backbone_id"])
         backbone_pdb = row.get("backbone_pdb", "")
+        if not backbone_id:
+            logger.error(f"Missing backbone_id for {design_id}")
+            status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "failed"})
+            continue
         if not backbone_pdb or not Path(backbone_pdb).exists():
-            logger.error(f"Backbone PDB missing for {design_id}: {backbone_pdb}")
-            status_rows.append({"design_id": design_id, "status": "failed"})
+            logger.error(f"Backbone PDB missing for {backbone_id}: {backbone_pdb}")
+            status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "failed"})
             continue
 
-        job_out = out_root / design_id
+        job_out = out_root / backbone_id
         if restart and (job_out / "done.flag").exists():
-            logger.info(f"Skipping completed MPNN: {design_id}")
-            status_rows.append({"design_id": design_id, "status": "completed"})
+            logger.info(f"Skipping completed MPNN: {backbone_id}")
+            status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "completed"})
             continue
 
         job_out.mkdir(parents=True, exist_ok=True)
         binder_min = int(row.get("binder_length_min", step_cfg.get("binder_length_min", 50)))
         binder_max = int(row.get("binder_length_max", step_cfg.get("binder_length_max", 80)))
-        binder_chain = infer_binder_chain(
-            backbone_pdb,
-            binder_min,
-            binder_max,
-            str(step_cfg.get("binder_chain", "auto")),
-        )
+        try:
+            binder_chain = infer_binder_chain(
+                backbone_pdb,
+                binder_min,
+                binder_max,
+                str(step_cfg.get("binder_chain", "auto")),
+            )
+        except ValueError as exc:
+            logger.error(f"Binder chain inference failed for {backbone_id}: {exc}")
+            status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "failed"})
+            continue
 
         cmd = [
             python_bin,
@@ -224,44 +240,60 @@ def run_proteinmpnn_design(
         if omit_aas:
             cmd.extend(["--omit_AAs", str(omit_aas)])
 
-        logger.info(f"ProteinMPNN {design_id}: design chain {binder_chain} on {backbone_pdb}")
+        logger.info(f"ProteinMPNN {backbone_id}: design chain {binder_chain} on {backbone_pdb}")
 
         if dry_run:
-            status_rows.append({"design_id": design_id, "status": "dry_run"})
+            status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "dry_run"})
             continue
 
         bash_cmd = (
-            f"source {env_sh} && {' '.join(cmd)}"
+            f"source {shlex.quote(str(env_sh))} && {' '.join(shlex.quote(a) for a in cmd)}"
             if env_sh.exists()
-            else " ".join(cmd)
+            else " ".join(shlex.quote(a) for a in cmd)
         )
         try:
-            subprocess.run(["bash", "-lc", bash_cmd], check=True)
+            result = subprocess.run(
+                ["bash", "-lc", bash_cmd],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            if result.stdout:
+                logger.info(result.stdout[-2000:])
             (job_out / "done.flag").touch()
-        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
-            logger.error(f"ProteinMPNN failed for {design_id}: {exc}")
-            status_rows.append({"design_id": design_id, "status": "failed"})
+        except subprocess.CalledProcessError as exc:
+            logger.error(f"ProteinMPNN failed for {backbone_id}: {exc}")
+            if exc.stdout:
+                logger.error("ProteinMPNN stdout (tail):\n%s", exc.stdout[-4000:])
+            if exc.stderr:
+                logger.error("ProteinMPNN stderr (tail):\n%s", exc.stderr[-4000:])
+            status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "failed"})
+            continue
+        except FileNotFoundError as exc:
+            logger.error(f"ProteinMPNN failed for {backbone_id}: {exc}")
+            status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "failed"})
             continue
 
         seq_dir = job_out / "seqs"
         fasta_files = sorted(seq_dir.glob("*.fa")) + sorted(seq_dir.glob("*.fasta"))
         if not fasta_files:
-            logger.error(f"No MPNN output FASTA for {design_id} in {seq_dir}")
-            status_rows.append({"design_id": design_id, "status": "failed"})
+            logger.error(f"No MPNN output FASTA for {backbone_id} in {seq_dir}")
+            status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "failed"})
             continue
 
         samples = parse_mpnn_output_fasta(fasta_files[0], binder_chain, backbone_pdb)
         if not samples:
-            logger.error(f"Could not parse MPNN sequences for {design_id}")
-            status_rows.append({"design_id": design_id, "status": "failed"})
+            logger.error(f"Could not parse MPNN sequences for {backbone_id}")
+            status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "failed"})
             continue
 
         best_score, best_seq, best_header = samples[0]
-        best_fasta = job_out / f"{design_id}_best.fa"
-        write_single_fasta(f"{design_id},score={best_score}", best_seq, str(best_fasta))
+        best_fasta = job_out / f"{backbone_id}_best.fa"
+        write_single_fasta(f"{backbone_id},score={best_score}", best_seq, str(best_fasta))
 
         rows.append(
             {
+                "backbone_id": backbone_id,
                 "design_id": design_id,
                 "job_id": row.get("job_id", ""),
                 "peptide": row.get("peptide", ""),
@@ -276,9 +308,9 @@ def run_proteinmpnn_design(
                 "mpnn_output_dir": str(job_out),
             }
         )
-        status_rows.append({"design_id": design_id, "status": "completed"})
+        status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "completed"})
         logger.info(
-            f"Designed {design_id}: chain {binder_chain}, len={len(best_seq)}, "
+            f"Designed {backbone_id}: chain {binder_chain}, len={len(best_seq)}, "
             f"score={best_score:.4f}"
         )
 
@@ -292,7 +324,7 @@ def run_proteinmpnn_design(
                 existing = pd.DataFrame()
             if not existing.empty:
                 new_df = pd.concat([existing, new_df], ignore_index=True)
-                new_df = new_df.drop_duplicates(subset=["design_id"], keep="last")
+                new_df = new_df.drop_duplicates(subset=["backbone_id"], keep="last")
         new_df.to_csv(manifest_path, sep="\t", index=False)
         logger.info(f"Designed binders manifest → {manifest_path} ({len(new_df)} rows)")
 
@@ -305,10 +337,10 @@ def run_proteinmpnn_design(
                 existing_status = pd.DataFrame()
             if not existing_status.empty:
                 status_df = pd.concat([existing_status, status_df], ignore_index=True)
-                status_df = status_df.drop_duplicates(subset=["design_id"], keep="last")
+                status_df = status_df.drop_duplicates(subset=["backbone_id"], keep="last")
         status_df.to_csv(status_path, sep="\t", index=False)
 
-    failed = [r["design_id"] for r in status_rows if r.get("status") == "failed"]
+    failed = [r["backbone_id"] for r in status_rows if r.get("status") == "failed"]
     if failed:
         raise RuntimeError(f"ProteinMPNN failed for: {', '.join(failed)}")
 

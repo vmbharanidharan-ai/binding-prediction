@@ -33,6 +33,10 @@ def build_binder_complexes(
     logger = setup_logger("step4_build", config["paths"]["logs_dir"])
 
     binders = pd.read_csv(binder_designs_tsv, sep="\t")
+    if "backbone_id" not in binders.columns and "backbone_pdb" in binders.columns:
+        binders["backbone_id"] = binders["backbone_pdb"].map(
+            lambda p: Path(str(p)).stem if p and str(p) != "nan" else ""
+        )
     contigs = pd.read_csv(contig_manifest_tsv, sep="\t")
     merged = binders.merge(contigs, on="design_id", how="left")
     designed_map = load_designed_binder_map(config)
@@ -63,14 +67,19 @@ def build_binder_complexes(
             continue
         allele_key, hla_seq = resolved
 
-        binder_seq, seq_source = resolve_binder_sequence(design_id, row, config, designed_map)
+        binder_seq, seq_source = resolve_binder_sequence(
+            str(row.get("backbone_id") or design_id),
+            row,
+            config,
+            designed_map,
+        )
         if seq_source == "placeholder":
             logger.warning(
                 f"{design_id}: no ProteinMPNN sequence — using poly-Ala placeholder "
                 f"(run Step 3.5 before Step 4)"
             )
 
-        complex_id = f"{design_id}_complex"
+        complex_id = f"{row.get('backbone_id', design_id)}_complex"
         fasta_path = out_path / f"{complex_id}.fasta"
         write_colabfold_complex_fasta(
             complex_id,
@@ -81,6 +90,7 @@ def build_binder_complexes(
         rows.append(
             {
                 "complex_id": complex_id,
+                "backbone_id": row.get("backbone_id", ""),
                 "design_id": design_id,
                 "peptide": peptide,
                 "allele": row["allele"],

@@ -352,6 +352,7 @@ def run_rfdiffusion(
         for pdb in pdbs:
             binder_rows.append(
                 {
+                    "backbone_id": pdb.stem,
                     "design_id": design_dir.name,
                     "backbone_pdb": str(pdb),
                     "sequence_fasta": str(fastas[0]) if fastas else "",
