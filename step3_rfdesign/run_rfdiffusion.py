@@ -113,6 +113,14 @@ def _validate_design_inputs(
         )
 
 
+def _resolve_schedule_cache_dir(step_cfg: dict) -> Path:
+    """Writable directory for RFdiffusion IGSO3 schedule caches (container FS is read-only)."""
+    raw = str(step_cfg.get("schedule_cache_dir", "${NEO_BINDER_WORK_ROOT:-./work}/.rfdiffusion_schedules"))
+    path = Path(os.path.expandvars(raw.strip()))
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def _hydra_overrides(
     row,
     job_out: Path,
@@ -122,6 +130,7 @@ def _hydra_overrides(
     step_cfg: dict,
 ) -> list:
     """Build Hydra CLI overrides; values with spaces must stay single shell tokens."""
+    schedule_dir = _resolve_schedule_cache_dir(step_cfg)
     contig_value = f"[{row['contig_map']}]"
     overrides = [
         f"inference.input_pdb={row['pdb_path']}",
@@ -130,6 +139,7 @@ def _hydra_overrides(
         f"diffuser.T={step_cfg['diffusion_steps']}",
         f"inference.num_designs={step_cfg['num_designs_per_structure']}",
         f"inference.model_directory_path={weights_dir}",
+        f"inference.schedule_directory_path={schedule_dir}",
         # /opt/rfdiffusion is read-only in the container; Hydra defaults to outputs/ there.
         f"hydra.run.dir={job_out / '.hydra'}",
         "hydra.job.chdir=false",

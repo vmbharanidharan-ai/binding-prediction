@@ -74,6 +74,7 @@ if [[ -n "${RFDIFFUSION_ROOT}" && -d "${RFDIFFUSION_ROOT}/models" ]]; then
 fi
 
 GPU_NAME="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo N/A)"
+SCHEDULES_DIR="${RFDIFFUSION_SCHEDULES_DIR:-${PROJECT_ROOT:-/tmp}/work/.rfdiffusion_schedules}"
 
 echo "=========================================="
 echo "RFdiffusion Inference (Apptainer)"
@@ -83,6 +84,7 @@ echo "Runner:     $RUNNER"
 echo "Script:     $INFERENCE_SCRIPT"
 echo "GPU:        $GPU_NAME"
 echo "Weights:    ${RFDIFFUSION_ROOT}/models → /opt/rfdiffusion/models"
+echo "Schedules:  ${SCHEDULES_DIR}"
 echo ""
 
 echo "Pre-flight: DGL CUDA test..."
@@ -107,9 +109,14 @@ echo ""
 # Hydra defaults write to outputs/ under --pwd (/opt/rfdiffusion), which is read-only.
 HYDRA_RUN_DIR="${RFDIFFUSION_HYDRA_DIR:-/tmp/rfdiffusion_hydra}"
 mkdir -p "$HYDRA_RUN_DIR"
+
+# RFdiffusion caches IGSO3 schedules here; /opt/rfdiffusion/schedules is read-only in the image.
+mkdir -p "$SCHEDULES_DIR"
+
 DEFAULT_HYDRA_ARGS=(
     "hydra.run.dir=${HYDRA_RUN_DIR}"
     "hydra.job.chdir=false"
+    "inference.schedule_directory_path=${SCHEDULES_DIR}"
 )
 
 echo "Running inference..."

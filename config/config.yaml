@@ -85,6 +85,7 @@ step3:
   denoiser_noise_scale_ca: 0      # PPI example: reduce noise for better binders
   denoiser_noise_scale_frame: 0
   write_trajectory: false         # saves disk; set true for debugging
+  schedule_cache_dir: "${NEO_BINDER_WORK_ROOT:-./work}/.rfdiffusion_schedules"
   hotspots:
     auto_select: true
     min_count: 5
