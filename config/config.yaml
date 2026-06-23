@@ -81,6 +81,10 @@ step3:
   binder_length_max: 80
   diffusion_steps: 25             # optimized: 25 (full: 50)
   rfdiffusion_weights: "${RFDIFFUSION_ROOT}/models"
+  ppi_checkpoint: "Complex_base_ckpt.pt"  # used when ppi.hotspot_res is set
+  denoiser_noise_scale_ca: 0      # PPI example: reduce noise for better binders
+  denoiser_noise_scale_frame: 0
+  write_trajectory: false         # saves disk; set true for debugging
   hotspots:
     auto_select: true
     min_count: 5

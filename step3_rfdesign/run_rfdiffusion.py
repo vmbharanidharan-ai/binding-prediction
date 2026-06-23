@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
+from step3_rfdesign.select_peptide_hotspots import validate_hotspots_in_pdb
 from utils.logging import setup_logger
 from utils.slurm_utils import filter_pending, get_completed_ids, load_config
 
@@ -67,26 +68,100 @@ def _resolve_weights_dir(rfdiff_root: Path, step_cfg: dict) -> str:
     )
 
 
+def _quote_hydra_value(value: str) -> str:
+    """Quote Hydra override values that contain spaces or brackets."""
+    if any(ch in value for ch in (" ", "[", "]", ",")):
+        escaped = value.replace("'", "\\'")
+        return f"'{escaped}'"
+    return value
+
+
+def _resolve_ppi_checkpoint(
+    step_cfg: dict,
+    container_weights_dir: str,
+    host_weights_dir: str,
+) -> str:
+    """Return container path to the PPI checkpoint; verify it exists on the host."""
+    ckpt_name = str(step_cfg.get("ppi_checkpoint", "Complex_base_ckpt.pt")).strip()
+    host_ckpt = Path(host_weights_dir) / ckpt_name
+    if not host_ckpt.exists():
+        raise FileNotFoundError(
+            f"PPI checkpoint not found: {host_ckpt} "
+            f"(bind-mounted to {container_weights_dir}/{ckpt_name})"
+        )
+    return f"{container_weights_dir.rstrip('/')}/{ckpt_name}"
+
+
+def _validate_design_inputs(
+    pdb_path: str,
+    hotspot_res: str,
+    host_weights_dir: str,
+    step_cfg: dict,
+) -> None:
+    """Fail fast before launching the GPU container."""
+    pdb = Path(pdb_path)
+    if not pdb.exists():
+        raise FileNotFoundError(f"Input PDB not found: {pdb}")
+    if not pdb.stat().st_size:
+        raise ValueError(f"Input PDB is empty: {pdb}")
+    validate_hotspots_in_pdb(pdb_path, hotspot_res)
+    if hotspot_res:
+        _resolve_ppi_checkpoint(
+            step_cfg,
+            str(step_cfg.get("container_weights_path", "/opt/rfdiffusion/models")),
+            host_weights_dir,
+        )
+
+
 def _hydra_overrides(
     row,
     job_out: Path,
     design_id: str,
     weights_dir: str,
+    host_weights_dir: str,
     step_cfg: dict,
 ) -> list:
     """Build Hydra CLI overrides; values with spaces must stay single shell tokens."""
+    contig_value = f"[{row['contig_map']}]"
     overrides = [
         f"inference.input_pdb={row['pdb_path']}",
         f"inference.output_prefix={job_out / design_id}",
-        f"contigmap.contigs=[{row['contig_map']}]",
+        f"contigmap.contigs={_quote_hydra_value(contig_value)}",
         f"diffuser.T={step_cfg['diffusion_steps']}",
         f"inference.num_designs={step_cfg['num_designs_per_structure']}",
         f"inference.model_directory_path={weights_dir}",
     ]
+    if not step_cfg.get("write_trajectory", False):
+        overrides.append("inference.write_trajectory=false")
+
     hotspot_res = str(row.get("hotspot_res", "") or "").strip()
     if hotspot_res:
-        overrides.append(f"ppi.hotspot_res=[{hotspot_res}]")
+        hotspot_value = f"[{hotspot_res}]"
+        overrides.append(f"ppi.hotspot_res={_quote_hydra_value(hotspot_value)}")
+        overrides.append(
+            f"inference.ckpt_override_path={_resolve_ppi_checkpoint(step_cfg, weights_dir, host_weights_dir)}"
+        )
+        overrides.append(
+            f"denoiser.noise_scale_ca={step_cfg.get('denoiser_noise_scale_ca', 0)}"
+        )
+        overrides.append(
+            f"denoiser.noise_scale_frame={step_cfg.get('denoiser_noise_scale_frame', 0)}"
+        )
     return overrides
+
+
+def _log_failure_excerpt(logger, job_out: Path, tail_chars: int = 12000) -> None:
+    """Print the traceback section from rfdiffusion.log when inference fails."""
+    log_path = job_out / "rfdiffusion.log"
+    if not log_path.exists():
+        return
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    if "Traceback" in text:
+        idx = text.rfind("Traceback")
+        excerpt = text[idx : idx + tail_chars]
+        logger.error("RFdiffusion traceback (from %s):\n%s", log_path, excerpt)
+    elif text.strip():
+        logger.error("RFdiffusion log tail (%s):\n%s", log_path, text[-tail_chars:])
 
 
 def _write_job_log(job_out: Path, result, label: str) -> None:
@@ -159,9 +234,25 @@ def run_rfdiffusion(
         if hotspot_res:
             logger.info(f"RFdiffusion hotspots for {design_id}: {hotspot_res}")
 
+        try:
+            _validate_design_inputs(
+                row["pdb_path"],
+                hotspot_res,
+                weights_dir,
+                step_cfg,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            logger.error("Pre-flight validation failed for %s: %s", design_id, exc)
+            status_rows.append(
+                {"design_id": design_id, "status": "failed", "output_dir": str(job_out)}
+            )
+            continue
+
         repo_root = Path(__file__).resolve().parent.parent
         container_image = _resolve_container_image(step_cfg)
-        hydra_args = _hydra_overrides(row, job_out, design_id, container_weights, step_cfg)
+        hydra_args = _hydra_overrides(
+            row, job_out, design_id, container_weights, weights_dir, step_cfg
+        )
         cmd = _build_container_cmd(repo_root, container_image, hydra_args)
 
         logger.info(f"Running RFdiffusion: {design_id}")
@@ -197,6 +288,7 @@ def run_rfdiffusion(
                 logger.error("RFdiffusion stderr (tail):\n%s", e.stderr[-8000:])
             if e.stdout:
                 logger.error("RFdiffusion stdout (tail):\n%s", e.stdout[-4000:])
+            _log_failure_excerpt(logger, job_out)
             logger.error(
                 "Full RFdiffusion log: %s",
                 job_out / "rfdiffusion.log",

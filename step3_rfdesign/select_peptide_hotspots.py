@@ -380,6 +380,28 @@ def select_hotspots_from_pdb(
     )
 
 
+def validate_hotspots_in_pdb(pdb_path: str, hotspot_res: str) -> None:
+    """Raise if any hotspot token is missing from the target PDB (CA atoms)."""
+    if not hotspot_res:
+        return
+    tokens = [t.strip() for t in hotspot_res.split(",") if t.strip()]
+    present: set[str] = set()
+    with open(pdb_path) as fh:
+        for line in fh:
+            if not line.startswith("ATOM"):
+                continue
+            if line[12:16].strip() != "CA":
+                continue
+            chain = line[21].strip() or "A"
+            resnum = int(line[22:26])
+            present.add(f"{chain}{resnum}")
+    missing = [token for token in tokens if token not in present]
+    if missing:
+        raise ValueError(
+            f"Hotspot residue(s) not found in {pdb_path}: {', '.join(missing)}"
+        )
+
+
 def build_rfdiffusion_contig(
     pdb_path: str,
     binder_length_min: int,
