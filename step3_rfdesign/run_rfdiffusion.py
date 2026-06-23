@@ -92,7 +92,7 @@ def _build_inference_shell_cmd(
         return (
             f"unset VIRTUAL_ENV; "
             f"source {shlex.quote(str(rfdiff_env_sh))} && "
-            f"export LD_LIBRARY_PATH=${{CONDA_PREFIX}}/lib && {body}"
+            f"export LD_LIBRARY_PATH=${{CONDA_PREFIX}}/lib:${{CONDA_PREFIX}}/lib64 && {body}"
         )
     return body
 

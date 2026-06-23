@@ -75,4 +75,6 @@ PY
 
 python "$SCRIPT_DIR/verify_dgl_cuda.py"
 
+echo ""
+echo "LD_LIBRARY_PATH for inference: ${LD_LIBRARY_PATH:-<unset>}"
 echo "=== SE3nv repair complete ==="

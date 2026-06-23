@@ -13,9 +13,8 @@ conda activate "${RFDIFFUSION_ENV:-SE3nv}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/dgl_cuda_libpath.sh"
 
-# DGL links against conda cudatoolkit — fail early if missing.
-if [[ ! -f "${CONDA_PREFIX}/lib/libcudart.so" && ! -f "${CONDA_PREFIX}/lib/libcudart.so.11.0" ]]; then
-    echo "WARN: cudatoolkit not found in SE3nv — run: conda install -c conda-forge cudatoolkit=11.1.1"
+if ! ls "${CONDA_PREFIX}/lib"/libcudart.so* "${CONDA_PREFIX}/lib64"/libcudart.so* 2>/dev/null | head -1 | grep -q .; then
+    echo "WARN: libcudart not found — run: conda install -c conda-forge cudatoolkit=11.1.1"
 fi
 
 export RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"
