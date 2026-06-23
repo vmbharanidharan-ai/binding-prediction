@@ -4,6 +4,10 @@
 
 A modular computational immunoinformatics pipeline for prioritizing neoantigen peptides and designing protein binders against peptide–MHC complexes. Built for UNC Longleaf HPC with restart-safe, manifest-driven execution.
 
+**In one sentence:** Given RNA-seq–derived neoantigen candidates, this pipeline models each peptide on its presenting HLA allele, designs de novo protein minibinders against the complex, validates them structurally, and ranks designs for experimental follow-up.
+
+**Who might use this:** Computational biologists and immunology researchers working on tumor neoantigens — especially splice-derived epitopes — who need a reproducible, HPC-ready workflow from cohort TSV to ranked binder candidates without hand-wiring four separate ML tools.
+
 ---
 
 ## Overview
@@ -87,27 +91,38 @@ See [Biological interpretation](#biological-interpretation) for how to read scor
 
 ---
 
-## The challenge: RFdiffusion on heterogeneous GPU clusters
+## The problem we solved
 
-RFdiffusion is a state-of-the-art SE(3)-equivariant diffusion model for protein binder design. It has a **fixed, fragile dependency stack**:
+RFdiffusion is a state-of-the-art binder design tool, but deploying it on a shared HPC cluster is a serious infrastructure problem. It depends on a **fixed, fragile stack**:
 
-- PyTorch 1.9.1 + CUDA 11.1
+- PyTorch 1.9.1 + CUDA 11.1 (pinned versions)
 - DGL 1.0.0 with GPU graph operations
-- SE3Transformer + Hydra configuration
+- SE3Transformer (NVIDIA's SE(3)-equivariant network)
+- Hydra configuration management
 
-On Longleaf, a conda-based `SE3nv` environment produced persistent runtime failures:
+An initial conda-based `SE3nv` environment on Longleaf produced persistent runtime failures across GPU node types:
 
 ```
 DGLError: Operator Range does not support cuda device
 ```
 
-The root cause was DGL's CUDA libraries not resolving consistently across GPU node types — `LD_LIBRARY_PATH` workarounds were node-dependent and brittle. RFdiffusion inference never completed successfully under conda.
+DGL's CUDA libraries failed to resolve consistently at inference time. `LD_LIBRARY_PATH` workarounds were node-dependent; numpy and scipy version conflicts appeared when conda pulled incompatible packages. **RFdiffusion inference never completed successfully under conda.**
+
+Beyond RFdiffusion, the pipeline orchestrates **multiple interdependent ML systems** — ColabFold, RFdiffusion, ProteinMPNN, and XGBoost — each with incompatible Python/CUDA dependencies. Running them in a single environment caused PATH and library conflicts.
 
 ---
 
 ## The solution: containerized RFdiffusion
 
-RFdiffusion now runs inside an **Apptainer container** with a pinned, immutable stack:
+We containerized RFdiffusion using **Apptainer** to ensure reproducibility across Longleaf GPU nodes (A100, L40, Volta).
+
+The container:
+
+- **Isolates** the full RFdiffusion stack (torch, CUDA, DGL, SE3Transformer, dependencies)
+- **Eliminates** conda dependency drift and cross-env PATH conflicts
+- **Runs identically** on any Longleaf GPU node via `apptainer exec --nv`
+- **Pre-validates** DGL CUDA graph operations before each inference job
+- **Bind-mounts** model weights from the host at runtime (weights stay outside the image)
 
 | Component | Version |
 |-----------|---------|
@@ -116,32 +131,37 @@ RFdiffusion now runs inside an **Apptainer container** with a pinned, immutable 
 | NumPy / SciPy | 1.23.5 / 1.10.1 |
 | RFdiffusion + SE3Transformer | upstream, editable install |
 
-The container:
+Orchestration stays in a lightweight `neo_binder` conda env; structure prediction uses `alphafoldenv`; ProteinMPNN uses `proteinmpnn`. **Only Step 3 inference enters the container.**
 
-- **Isolates** the full RFdiffusion runtime from host conda environments
-- **Bind-mounts** model weights from `$PROJECT_ROOT/RFdiffusion/models` at runtime
-- **Pre-validates** DGL CUDA graph operations before each inference job
-- **Runs identically** on A100, L40, and Volta GPU nodes on Longleaf
+**Result:** ~40-minute one-time build, zero runtime GPU issues after containerization, reproducible across hardware.
 
-Orchestration stays in a lightweight `neo_binder` conda env; only Step 3 inference enters the container.
+### Why Apptainer over conda?
+
+| Concern | Conda SE3nv | Apptainer |
+|---------|-------------|-----------|
+| DGL CUDA at runtime | Failed unpredictably | Baked in at build time |
+| Cross-node reproducibility | Node-dependent | Guaranteed (immutable image) |
+| Dependency drift | Ongoing (pip/conda conflicts) | None after build |
+| Isolation from other pipeline envs | Poor (PATH hijacking) | Complete |
+| Maintenance burden | High | Rebuild only when upgrading RFdiffusion |
 
 ### Performance and reproducibility
 
-| Aspect | Conda SE3nv (before) | Apptainer (after) |
-|--------|----------------------|-------------------|
-| One-time setup | ~1 h + ongoing debugging | ~40 min build, then stable |
-| Runtime GPU errors | DGL CUDA failures on inference | Zero (pre-flight validated) |
-| Cross-node behavior | Node-dependent | Identical |
+| Aspect | Before | After |
+|--------|--------|-------|
+| Setup time | ~1 hour (with debugging) | ~40 minutes (one-time build) |
+| Runtime issues | DGL CUDA failures on inference | Zero (containerized + pre-flight validated) |
+| Reproducibility | Node-dependent | Guaranteed across GPU nodes |
 | Maintenance | High (conda drift, numpy conflicts) | None (immutable image) |
-| Disk per dataset | ~500 MB env | ~2–3 GB `.sif` (shareable across projects) |
+| Disk | ~500 MB per conda env | ~2–3 GB `.sif` (shareable across datasets) |
 
-See [`containers/APPTAINER_BUILD_INSTRUCTIONS.md`](containers/APPTAINER_BUILD_INSTRUCTIONS.md) for build details.
+See [`containers/APPTAINER_BUILD_INSTRUCTIONS.md`](containers/APPTAINER_BUILD_INSTRUCTIONS.md) for build and rebuild instructions.
 
 ---
 
 ## Architecture
 
-This is not a single end-to-end model. Four ML systems are orchestrated with explicit separation of concerns:
+This pipeline **orchestrates multiple interdependent ML systems** with different CUDA/Python dependencies. It processes **RNA-seq–derived neoantigen cohorts through multiple inference stages** — structure prediction, generative design, sequence assignment, validation, and ranking — without collapsing them into a single fragile environment.
 
 ```
 Cohort TSV (peptide, HLA, presentation metrics, gene)
@@ -172,40 +192,78 @@ Cohort TSV (peptide, HLA, presentation metrics, gene)
 └──────────────────────────────────────────────────────────────┘
 ```
 
-| Stage | Tool | Role |
-|-------|------|------|
-| 0 | ESM-2 | Peptide/allele embeddings for downstream ranking |
-| 1 | ColabFold / AlphaFold-Multimer v3 | Peptide–HLA complex modeling |
-| 1.5 | BioPython | HLA groove truncation (reduces diffusion compute) |
-| 2 | Custom metrics | Structure confidence, clustering, top-N selection |
-| 3 | RFdiffusion (Apptainer) | De novo binder backbone generation |
-| 3.5 | ProteinMPNN | Sequence assignment to binder backbone |
-| 4 | ColabFold multimer | Binder + target re-folding validation |
-| 5 | XGBoost (`rank:pairwise`) | Multi-modal candidate prioritization |
+**Apptainer at Step 3:** RFdiffusion is the only stage that requires the legacy PyTorch 1.9 / CUDA 11.1 / DGL stack. Containerizing it keeps that stack isolated while ColabFold (JAX) and ProteinMPNN (modern PyTorch) run in their own environments. The Apptainer image ensures **identical execution across GPU nodes** — no conda drift, no per-node `LD_LIBRARY_PATH` fixes.
+
+| Stage | Tool | Runtime | Role |
+|-------|------|---------|------|
+| 0 | ESM-2 | `neo_binder` | Peptide/allele embeddings for downstream ranking |
+| 1 | ColabFold / AlphaFold-Multimer v3 | `alphafoldenv` | Peptide–HLA complex modeling |
+| 1.5 | BioPython | `neo_binder` | HLA groove truncation (reduces diffusion compute) |
+| 2 | Custom metrics | `neo_binder` | Structure confidence, clustering, top-N selection |
+| 3 | RFdiffusion | **Apptainer** (`rfdiffusion.sif`) | De novo binder backbone generation |
+| 3.5 | ProteinMPNN | `proteinmpnn` | Sequence assignment to binder backbone |
+| 4 | ColabFold multimer | `alphafoldenv` | Binder + target re-folding validation |
+| 5 | XGBoost (`rank:pairwise`) | `neo_binder` | Multi-modal candidate prioritization |
 
 ---
 
 ## Key contributions
 
-- **End-to-end immunoinformatics workflow** from RNA-seq–derived neoepitope lists to ranked minibinder candidates, with restart-safe HPC execution
-- **Solved RFdiffusion GPU integration** on Longleaf by replacing conda with a reproducible Apptainer image and bind-mounted weights
-- **Environment isolation architecture** — orchestration (`neo_binder`), structure prediction (`alphafoldenv`), sequence design (`proteinmpnn`), and diffusion (container) each run in isolated runtimes without PATH conflicts
-- **Target-aware binder design** — automatic peptide hotspot selection, HLA groove truncation, and PPI-conditioned RFdiffusion contigs
-- **Leakage-aware ML ranking** — gene-level train/test splits, biological priors separated from structural confidence scores
+This is **research/production computational work** — not a tutorial or class exercise. Specific technical contributions:
+
+- **End-to-end immunoinformatics workflow** — processes RNA-seq–derived neoantigen cohorts through structure prediction, generative binder design, validation, and ML ranking with restart-safe SLURM execution on Longleaf
+- **Solved DGL CUDA runtime compatibility** — diagnosed `DGLError: Operator Range does not support cuda device` across heterogeneous GPU nodes; replaced fragile conda `SE3nv` with a reproducible Apptainer image
+- **Multi-environment orchestration** — manages ColabFold (JAX), RFdiffusion (legacy PyTorch 1.9), ProteinMPNN, and XGBoost in isolated runtimes without PATH or library conflicts
+- **Apptainer container ensures identical execution across GPU nodes** — pinned torch/DGL/SE3Transformer stack, pre-flight CUDA validation, bind-mounted weights
+- **Target-aware binder design** — automatic peptide hotspot selection, HLA groove truncation, PPI-conditioned RFdiffusion contigs for splice-derived neoepitopes
+- **Leakage-aware ML ranking** — gene-level train/test splits; biological priors separated from structural confidence scores
 
 ---
 
 ## Technical stack
 
-| Layer | Components |
-|-------|------------|
-| Structure prediction | ColabFold, AlphaFold2-Multimer v3, JAX/CUDA |
-| Generative design | RFdiffusion in Apptainer (SE(3)-equivariant diffusion) |
-| Sequence design | ProteinMPNN |
-| Protein language models | ESM-2 (650M), optional ProtT5 |
-| ML ranking | XGBoost learning-to-rank, PCA feature compression |
-| Orchestration | Python, YAML config, SLURM, manifest-driven restart |
-| Container runtime | Apptainer/Singularity with `--nv` GPU passthrough |
+| Layer | Tool | Notes |
+|-------|------|-------|
+| **Step 0** — Embeddings | ESM-2 (650M), optional ProtT5 | Peptide/allele sequence embeddings |
+| **Step 1** — Structure | ColabFold (AlphaFold2-Multimer v3) | Peptide–HLA complex modeling; JAX/CUDA |
+| **Step 1.5** — Target prep | BioPython | HLA groove truncation for diffusion |
+| **Step 2** — Scoring | Custom metrics + clustering | Structure confidence, top-N selection |
+| **Step 3** — Backbone design | RFdiffusion in **Apptainer** | PyTorch 1.9.1 + CUDA 11.1 + DGL 1.0.0 |
+| **Step 3.5** — Sequence design | ProteinMPNN | Binder sequence on RFdiffusion backbone |
+| **Step 4** — Validation | ColabFold multimer | Re-fold binder + target; engagement scoring |
+| **Step 5** — Ranking | XGBoost (`rank:pairwise`) | Multi-modal learning-to-rank |
+| **Orchestration** | Python, YAML, SLURM | Manifest-driven, restart-safe |
+| **Container runtime** | Apptainer/Singularity `--nv` | GPU passthrough for Step 3 only |
+
+---
+
+## Container details
+
+RFdiffusion is the only pipeline stage that requires the legacy CUDA 11.1 / PyTorch 1.9 / DGL stack. Everything else runs in modern conda environments. Containerizing Step 3 was the cleanest way to get **GPU support without conda drift**.
+
+**Build (one-time, ~40 min on a GPU node):**
+
+```bash
+module load apptainer
+sbatch slurm/build_rfdiffusion_container.sbatch
+# or interactively:
+bash scripts/build_rfdiffusion_container.sh
+```
+
+**Verify before running Step 3:**
+
+```bash
+bash scripts/verify_rfdiffusion_container.sh
+```
+
+**Rebuild** when upgrading RFdiffusion or changing pinned dependency versions — edit `containers/rfdiffusion.def` and re-run the build script. See [`containers/APPTAINER_BUILD_INSTRUCTIONS.md`](containers/APPTAINER_BUILD_INSTRUCTIONS.md).
+
+| Artifact | Path | Notes |
+|----------|------|-------|
+| Container image | `$PROJECT_ROOT/rfdiffusion.sif` | ~2–3 GB; shareable across datasets |
+| Model weights | `$PROJECT_ROOT/RFdiffusion/models/*.pt` | Bind-mounted read-only at runtime |
+| Inference wrapper | `scripts/run_rfdiffusion_container.sh` | DGL CUDA pre-flight + `apptainer exec --nv` |
+| Definition file | `containers/rfdiffusion.def` | Pinned dependency stack |
 
 ---
 
@@ -265,26 +323,27 @@ tail -f logs/step3_*.out
 
 ---
 
-## RFdiffusion container (Step 3)
+## Usage
 
-Step 3 requires a built Apptainer image and downloaded model weights:
+**Submit individual pipeline steps on Longleaf:**
 
 ```bash
-# On a GPU node
-module load apptainer
-bash scripts/build_rfdiffusion_container.sh
-bash scripts/verify_rfdiffusion_container.sh
+./slurm/submit_step.sh 3      # RFdiffusion backbones (GPU + Apptainer)
+./slurm/submit_step.sh 3.5    # ProteinMPNN sequences
+./slurm/submit_step.sh 4      # binder validation
+./slurm/submit_step.sh 5      # ML ranking
 ```
 
-Artifacts:
+**Run locally or resume from a step:**
 
-| Path | Description |
-|------|-------------|
-| `$PROJECT_ROOT/rfdiffusion.sif` | Container image (~2–3 GB); shareable across datasets |
-| `$PROJECT_ROOT/RFdiffusion/models/*.pt` | Checkpoint weights (bind-mounted read-only) |
-| `scripts/run_rfdiffusion_container.sh` | Wrapper invoked by the pipeline |
+```bash
+python run_pipeline.py --input data/step5_input.tsv     # full pipeline
+python run_pipeline.py --step step3                       # single step
+python run_pipeline.py --from-step step3                  # resume after failure
+python run_pipeline.py --dry-run                          # print commands only
+```
 
-The same `.sif` can be copied or symlinked into other project roots; only weights and input PDBs are dataset-specific.
+Each step writes status TSVs and `done.flag` files. Re-submitting a SLURM job skips completed work.
 
 ---
 
@@ -360,16 +419,31 @@ These scores inform prioritization under uncertainty — they are **not** direct
 
 ---
 
-## Local execution
+## Future work
 
-```bash
-python run_pipeline.py --input data/step5_input.tsv     # full pipeline
-python run_pipeline.py --step step3                       # single step
-python run_pipeline.py --from-step step3                  # resume
-python run_pipeline.py --dry-run
-```
+The pipeline is designed to be extended:
 
-Each step writes status TSVs and `done.flag` files. Re-submitting a SLURM job skips completed work.
+- **New cohorts** — point `INPUT_TSV` at any peptide–allele table; reuse the same `rfdiffusion.sif` across datasets
+- **Alternative structure backends** — Step 1 supports PMGen as an alternative to ColabFold (`config/config.yaml` → `step1.backend`)
+- **Rosetta interface scoring** — optional energies in Step 4 (`step4.use_rosetta`)
+- **Additional embedding models** — ProtT5 toggle in `config/config.yaml` → `embeddings`
+- **Accuracy vs. cost tradeoffs** — `runtime.profile: full` increases diffusion steps, designs per structure, and ColabFold recycles
+
+---
+
+## Development and troubleshooting
+
+| Topic | Documentation |
+|-------|---------------|
+| Apptainer build & rebuild | [`containers/APPTAINER_BUILD_INSTRUCTIONS.md`](containers/APPTAINER_BUILD_INSTRUCTIONS.md) |
+| Container definition (pinned deps) | [`containers/rfdiffusion.def`](containers/rfdiffusion.def) |
+| RFdiffusion one-time setup | `scripts/setup_rfdiffusion_longleaf.sh` |
+| ColabFold / JAX issues | `scripts/repair_colabfold_jax_haiku.sh` |
+| Environment isolation check | `scripts/check_env_isolation.sh` |
+| Pipeline configuration | `config/config.yaml` |
+| Per-step output summaries | `python utils/step_summary.py --step <step>` |
+
+This is an **HPC-specialized** workflow (UNC Longleaf). GPU jobs require `--qos=gpu_access`. ColabFold cache is redirected to `/work` via `scripts/colabfold_work_paths.sh` to avoid home quota limits.
 
 ---
 
