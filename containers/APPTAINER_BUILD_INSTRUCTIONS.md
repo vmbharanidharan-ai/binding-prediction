@@ -26,7 +26,7 @@ Or submit: `sbatch slurm/build_rfdiffusion_container.sbatch`
 ## Definition file
 
 `containers/rfdiffusion.def` pins:
-- torch 1.9.1+cu111, numpy 1.23.5, scipy 1.10.1, dgl 1.0.0
+- torch 1.9.1+cu111, numpy 1.23.5, scipy 1.10.1, dgl 1.0.0+cu113 (cu111 wheels removed from DGL CDN)
 - RFdiffusion + SE3Transformer from upstream GitHub
 
 ## Troubleshooting
@@ -34,7 +34,8 @@ Or submit: `sbatch slurm/build_rfdiffusion_container.sbatch`
 | Issue | Fix |
 |-------|-----|
 | Build hangs on timezone prompt | Use current `rfdiffusion.def` (sets `DEBIAN_FRONTEND=noninteractive` + `TZ=UTC`); kill build and rebuild |
-| `Device API cuda is not enabled` / CPU DGL | Rebuild with current def: `pip install dgl --no-index --find-links .../cu111/repo.html` |
+| `Device API cuda is not enabled` / CPU DGL | Rebuild with current def (wget cu113 wheel directly; cu111 CDN is gone) |
+| `No matching distribution found for dgl==1.0.0` with cu111 | Expected — use current def which installs `dgl-1.0.0+cu113` wheel |
 | `ModuleNotFoundError: se3_transformer` at end of build | Use current def: `pip install .` for SE3Transformer (not `setup.py install`) |
 | `torch 2.8.0` / `se3-transformer` not found | Use current def: no unpinned `e3nn`; SE3Transformer from source; `pip install --no-deps -e .` for RFdiffusion |
 | `apptainer: command not found` | `module load apptainer` |
