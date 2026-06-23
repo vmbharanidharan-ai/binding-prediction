@@ -105,5 +105,14 @@ echo "DGL CUDA OK"
 echo ""
 
 echo "Running inference..."
+set +e
 "$RUNNER" exec --nv "${BIND_ARGS[@]}" --pwd /opt/rfdiffusion "$CONTAINER" \
     python "$INFERENCE_SCRIPT" "$@"
+INFER_RC=$?
+set -e
+if [[ $INFER_RC -ne 0 ]]; then
+    echo ""
+    echo "ERROR: RFdiffusion inference failed (exit code $INFER_RC)"
+    echo "Hydra overrides: $*"
+    exit "$INFER_RC"
+fi
