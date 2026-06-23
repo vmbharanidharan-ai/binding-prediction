@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shlex
 import subprocess
@@ -83,6 +84,30 @@ def infer_binder_chain(
     return max(candidates, key=lambda item: item[1])[0]
 
 
+def _resolve_mpnn_root(step_cfg: Mapping[str, object], config: Mapping[str, object]) -> Path:
+    """Resolve ProteinMPNN install directory from env (preferred) or config."""
+    work_root = Path(str(config.get("paths", {}).get("work_root", ".")))
+    for candidate in (
+        os.environ.get("PROTEINMPNN_ROOT"),
+        step_cfg.get("proteinmpnn_root"),
+        str(work_root.parent / "ProteinMPNN"),
+    ):
+        if not candidate:
+            continue
+        path = Path(os.path.expandvars(str(candidate).strip()))
+        if (path / "protein_mpnn_run.py").exists():
+            return path
+    raise FileNotFoundError(
+        "ProteinMPNN not found. Set PROTEINMPNN_ROOT or run: bash scripts/setup_proteinmpnn_longleaf.sh"
+    )
+
+
+def _mpnn_shell_cmd(env_sh: Path, argv: List[str]) -> str:
+    """Build a bash -lc command that activates proteinmpnn then exec's argv."""
+    inner = " ".join(shlex.quote(arg) for arg in argv)
+    return f"source {shlex.quote(str(env_sh))} && exec {inner}"
+
+
 def model_weights_dir(mpnn_root: Path, step_cfg: Mapping[str, object]) -> Path:
     if step_cfg.get("ca_only"):
         return mpnn_root / "ca_model_weights"
@@ -144,16 +169,8 @@ def run_proteinmpnn_design(
     logger = setup_logger("step3_5_mpnn", config["paths"]["logs_dir"])
     step_cfg = config.get("step3_5", {})
 
-    mpnn_root = Path(
-        step_cfg.get("proteinmpnn_root")
-        or __import__("os").environ.get("PROTEINMPNN_ROOT", "")
-        or Path(config["paths"].get("work_root", ".")).parent / "ProteinMPNN"
-    )
+    mpnn_root = _resolve_mpnn_root(step_cfg, config)
     mpnn_script = mpnn_root / "protein_mpnn_run.py"
-    if not mpnn_script.exists() and not dry_run:
-        raise FileNotFoundError(
-            f"ProteinMPNN not found at {mpnn_root}. Run: bash scripts/setup_proteinmpnn_longleaf.sh"
-        )
     logger.info(f"ProteinMPNN root: {mpnn_root}")
 
     binders = pd.read_csv(binder_designs_tsv, sep="\t")
@@ -182,8 +199,9 @@ def run_proteinmpnn_design(
 
     repo_root = Path(__file__).resolve().parent.parent
     env_sh = repo_root / "scripts" / "proteinmpnn_env.sh"
+    if not env_sh.exists() and not dry_run:
+        raise FileNotFoundError(f"ProteinMPNN env script not found: {env_sh}")
     weights_dir = model_weights_dir(mpnn_root, step_cfg)
-    python_bin = str(step_cfg.get("python_cmd") or "python")
 
     rows = []
     status_rows = []
@@ -228,7 +246,7 @@ def run_proteinmpnn_design(
             continue
 
         cmd = [
-            python_bin,
+            "python",
             str(mpnn_script),
             "--pdb_path",
             str(backbone_pdb),
@@ -263,17 +281,14 @@ def run_proteinmpnn_design(
             status_rows.append({"backbone_id": backbone_id, "design_id": design_id, "status": "dry_run"})
             continue
 
-        bash_cmd = (
-            f"source {shlex.quote(str(env_sh))} && {' '.join(shlex.quote(a) for a in cmd)}"
-            if env_sh.exists()
-            else " ".join(shlex.quote(a) for a in cmd)
-        )
+        bash_cmd = _mpnn_shell_cmd(env_sh, cmd) if env_sh.exists() else " ".join(shlex.quote(a) for a in cmd)
         try:
             result = subprocess.run(
                 ["bash", "-lc", bash_cmd],
                 check=True,
                 capture_output=True,
                 text=True,
+                env=os.environ.copy(),
             )
             if result.stdout:
                 logger.info(result.stdout[-2000:])

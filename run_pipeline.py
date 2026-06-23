@@ -50,7 +50,14 @@ def run_cmd(cmd: list, logger, dry_run: bool = False) -> None:
     logger.info(f"Running: {' '.join(cmd)}")
     if dry_run:
         return
-    subprocess.run(cmd, check=True, cwd=str(REPO_ROOT))
+    try:
+        subprocess.run(cmd, check=True, cwd=str(REPO_ROOT), capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        if exc.stdout:
+            logger.error("stdout (tail):\n%s", exc.stdout[-8000:])
+        if exc.stderr:
+            logger.error("stderr (tail):\n%s", exc.stderr[-8000:])
+        raise
 
 
 def run_embeddings(config: dict, input_tsv: str, logger, dry_run: bool = False) -> None:
