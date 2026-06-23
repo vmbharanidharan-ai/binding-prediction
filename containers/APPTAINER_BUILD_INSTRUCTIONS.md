@@ -33,6 +33,7 @@ Or submit: `sbatch slurm/build_rfdiffusion_container.sbatch`
 
 | Issue | Fix |
 |-------|-----|
+| Build hangs on timezone prompt | Use current `rfdiffusion.def` (sets `DEBIAN_FRONTEND=noninteractive` + `TZ=UTC`); kill build and rebuild |
 | `apptainer: command not found` | `module load apptainer` |
 | Build permission denied | `apptainer build --fakeroot --nv ...` |
 | DGL CUDA test fails | Rebuild with `--nv`; run verify on GPU node |
