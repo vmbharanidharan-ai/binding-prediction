@@ -11,7 +11,7 @@ Model weights are bind-mounted at runtime from host RFdiffusion/models.
 
 %labels
 Author "binding-prediction"
-Version "1.0"
+Version "1.1"
 PyTorch "1.9.1+cu111"
 CUDA "11.1"
 Python "3.9"
@@ -50,6 +50,7 @@ export LD_LIBRARY_PATH=/usr/local/cuda-11.1/lib64:${LD_LIBRARY_PATH:-}
     update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
     python -m pip install --upgrade pip setuptools wheel
 
+    # PyTorch 1.9.1 + CUDA 11.1 (must stay pinned — RFdiffusion/DGL require this stack)
     pip install --no-cache-dir \
         torch==1.9.1+cu111 \
         torchvision==0.10.1+cu111 \
@@ -62,28 +63,48 @@ export LD_LIBRARY_PATH=/usr/local/cuda-11.1/lib64:${LD_LIBRARY_PATH:-}
         -f https://data.dgl.ai/wheels/cu111/repo.html
 
     pip install --no-cache-dir \
-        networkx requests tqdm psutil charset-normalizer pillow \
-        hydra-core pyrsistent omegaconf e3nn
+        networkx requests tqdm psutil charset-normalizer pillow
+
+    # Hydra only here — do NOT install unpinned e3nn (0.6.0+ pulls torch>=2.2)
+    pip install --no-cache-dir hydra-core pyrsistent omegaconf
 
     mkdir -p /opt/rfdiffusion
     cd /opt/rfdiffusion
     git clone --depth 1 https://github.com/RosettaCommons/RFdiffusion.git .
 
+    # SE3Transformer from RFdiffusion tree (pins e3nn==0.3.3 via requirements.txt)
     cd env/SE3Transformer
     pip install --no-cache-dir -r requirements.txt
     python setup.py install
+    python -c "import se3_transformer; print('SE3Transformer OK')" || exit 1
     cd /opt/rfdiffusion
 
-    pip install --no-cache-dir -e .
+    # --no-deps: se3-transformer is not on PyPI; already installed from source above
+    pip install --no-cache-dir --no-deps -e .
+    python -c "import rfdiffusion; print(f'RFdiffusion OK: {rfdiffusion.__file__}')" || exit 1
 
     python - <<'PYEOF'
-import torch, numpy, scipy, dgl, hydra, rfdiffusion
+import sys
+import torch
+import numpy
+import scipy
+import dgl
+import hydra
+import se3_transformer
+import rfdiffusion
+
+if not torch.__version__.startswith("1.9."):
+    print(f"ERROR: torch {torch.__version__} — expected 1.9.x (e3nn pin failed)")
+    sys.exit(1)
+
 print(f"torch {torch.__version__}")
 print(f"numpy {numpy.__version__}")
 print(f"scipy {scipy.__version__}")
 print(f"dgl {dgl.__version__}")
 print(f"hydra {hydra.__version__}")
+print(f"se3_transformer OK")
 print(f"rfdiffusion {rfdiffusion.__file__}")
+print("All imports successful")
 PYEOF
 
     apt-get clean
