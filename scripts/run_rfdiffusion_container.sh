@@ -104,10 +104,18 @@ fi
 echo "DGL CUDA OK"
 echo ""
 
+# Hydra defaults write to outputs/ under --pwd (/opt/rfdiffusion), which is read-only.
+HYDRA_RUN_DIR="${RFDIFFUSION_HYDRA_DIR:-/tmp/rfdiffusion_hydra}"
+mkdir -p "$HYDRA_RUN_DIR"
+DEFAULT_HYDRA_ARGS=(
+    "hydra.run.dir=${HYDRA_RUN_DIR}"
+    "hydra.job.chdir=false"
+)
+
 echo "Running inference..."
 set +e
-"$RUNNER" exec --nv "${BIND_ARGS[@]}" --pwd /opt/rfdiffusion "$CONTAINER" \
-    python "$INFERENCE_SCRIPT" "$@"
+"$RUNNER" exec --nv --env HYDRA_FULL_ERROR=1 "${BIND_ARGS[@]}" --pwd /opt/rfdiffusion "$CONTAINER" \
+    python "$INFERENCE_SCRIPT" "${DEFAULT_HYDRA_ARGS[@]}" "$@"
 INFER_RC=$?
 set -e
 if [[ $INFER_RC -ne 0 ]]; then

@@ -130,6 +130,9 @@ def _hydra_overrides(
         f"diffuser.T={step_cfg['diffusion_steps']}",
         f"inference.num_designs={step_cfg['num_designs_per_structure']}",
         f"inference.model_directory_path={weights_dir}",
+        # /opt/rfdiffusion is read-only in the container; Hydra defaults to outputs/ there.
+        f"hydra.run.dir={job_out / '.hydra'}",
+        "hydra.job.chdir=false",
     ]
     if not step_cfg.get("write_trajectory", False):
         overrides.append("inference.write_trajectory=false")
