@@ -50,7 +50,14 @@ def run_cmd(cmd: list, logger, dry_run: bool = False) -> None:
     logger.info(f"Running: {' '.join(cmd)}")
     if dry_run:
         return
-    subprocess.run(cmd, check=True, cwd=str(REPO_ROOT))
+    try:
+        subprocess.run(cmd, check=True, cwd=str(REPO_ROOT), capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        if exc.stdout:
+            logger.error("stdout (tail):\n%s", exc.stdout[-8000:])
+        if exc.stderr:
+            logger.error("stderr (tail):\n%s", exc.stderr[-8000:])
+        raise
 
 
 def run_embeddings(config: dict, input_tsv: str, logger, dry_run: bool = False) -> None:
@@ -222,11 +229,22 @@ def run_step4(config: dict, logger, dry_run: bool = False) -> None:
     """Stage 4: Binder validation via AlphaFold-Multimer."""
     paths = config["paths"]
     s3 = paths["step3_outputs"]
+    s3_5 = paths["step3_5_outputs"]
     s4 = paths["step4_outputs"]
+
+    designed_binders = Path(s3_5) / "designed_binders.tsv"
+    binders_tsv = str(designed_binders if designed_binders.exists() else Path(s3) / "binder_designs.tsv")
+    if designed_binders.exists():
+        logger.info(f"Step 4 binders input: {binders_tsv} (one complex per backbone)")
+    else:
+        logger.warning(
+            f"Step 3.5 manifest not found; falling back to {binders_tsv}. "
+            "Run Step 3.5 first for per-backbone complexes."
+        )
 
     run_cmd(
         ["python", "step4_binder_validation/build_complexes.py",
-         "--binders", f"{s3}/binder_designs.tsv",
+         "--binders", binders_tsv,
          "--contigs", f"{s3}/contigs/contig_manifest.tsv",
          "--output-dir", f"{s4}/complexes"],
         logger, dry_run,

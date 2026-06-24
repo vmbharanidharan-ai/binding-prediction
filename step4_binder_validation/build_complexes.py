@@ -17,6 +17,19 @@ from utils.logging import setup_logger
 from utils.slurm_utils import load_config
 
 
+def _ensure_backbone_id(df: pd.DataFrame) -> pd.DataFrame:
+    """Assign a stable backbone_id for each RFdiffusion backbone PDB."""
+    out = df.copy()
+    if "backbone_id" not in out.columns:
+        out["backbone_id"] = ""
+    missing = out["backbone_id"].astype(str).str.strip() == ""
+    if "backbone_pdb" in out.columns:
+        out.loc[missing, "backbone_id"] = out.loc[missing, "backbone_pdb"].map(
+            lambda p: Path(str(p)).stem if p and str(p) != "nan" else ""
+        )
+    return out
+
+
 def build_binder_complexes(
     binder_designs_tsv: str,
     contig_manifest_tsv: str,
@@ -32,17 +45,22 @@ def build_binder_complexes(
     config = load_config(config_path)
     logger = setup_logger("step4_build", config["paths"]["logs_dir"])
 
-    binders = pd.read_csv(binder_designs_tsv, sep="\t")
+    binders = _ensure_backbone_id(pd.read_csv(binder_designs_tsv, sep="\t"))
     contigs = pd.read_csv(contig_manifest_tsv, sep="\t")
-    merged = binders.merge(contigs, on="design_id", how="left")
+    contig_cols = [c for c in [
+        "design_id", "job_id", "peptide", "allele", "pdb_path",
+        "binder_length_min", "binder_length_max",
+    ] if c in contigs.columns]
+    merged = binders.merge(contigs[contig_cols], on="design_id", how="left", suffixes=("", "_contig"))
     designed_map = load_designed_binder_map(config)
     if designed_map:
-        logger.info(f"Using Step 3.5 ProteinMPNN sequences for {len(designed_map)} design(s)")
+        logger.info(f"Using Step 3.5 ProteinMPNN sequences for {len(designed_map)} backbone(s)")
     max_per_peptide = config["step4"].get("max_complexes_per_peptide")
     if max_per_peptide:
         merged = (
-            merged.groupby("peptide", group_keys=False)
-            .head(max_per_peptide)
+            merged.sort_values("backbone_id")
+            .groupby("peptide", group_keys=False)
+            .head(int(max_per_peptide))
             .reset_index(drop=True)
         )
         logger.info(
@@ -56,6 +74,10 @@ def build_binder_complexes(
     rows = []
     for _, row in merged.iterrows():
         design_id = row["design_id"]
+        backbone_id = str(row.get("backbone_id", "") or "").strip()
+        if not backbone_id:
+            logger.warning(f"Skipping row without backbone_id (design_id={design_id})")
+            continue
         peptide = row["peptide"]
         resolved = resolve_hla_sequence(row["allele"], config)
         if resolved is None:
@@ -63,14 +85,23 @@ def build_binder_complexes(
             continue
         allele_key, hla_seq = resolved
 
-        binder_seq, seq_source = resolve_binder_sequence(design_id, row, config, designed_map)
+        binder_seq = str(row.get("binder_sequence", "") or "").strip()
+        if binder_seq:
+            seq_source = "mpnn"
+        else:
+            binder_seq, seq_source = resolve_binder_sequence(
+                backbone_id,
+                row,
+                config,
+                designed_map,
+            )
         if seq_source == "placeholder":
             logger.warning(
-                f"{design_id}: no ProteinMPNN sequence — using poly-Ala placeholder "
+                f"{backbone_id}: no ProteinMPNN sequence — using poly-Ala placeholder "
                 f"(run Step 3.5 before Step 4)"
             )
 
-        complex_id = f"{design_id}_complex"
+        complex_id = f"{backbone_id}_complex"
         fasta_path = out_path / f"{complex_id}.fasta"
         write_colabfold_complex_fasta(
             complex_id,
@@ -81,6 +112,7 @@ def build_binder_complexes(
         rows.append(
             {
                 "complex_id": complex_id,
+                "backbone_id": backbone_id,
                 "design_id": design_id,
                 "peptide": peptide,
                 "allele": row["allele"],
@@ -89,9 +121,10 @@ def build_binder_complexes(
                 "target_pdb": row.get("pdb_path", ""),
                 "binder_sequence_source": seq_source,
                 "binder_sequence": binder_seq,
+                "mpnn_score": row.get("mpnn_score", ""),
             }
         )
-        logger.info(f"Built complex: {complex_id}")
+        logger.info(f"Built complex: {complex_id} (backbone {backbone_id})")
 
     manifest = pd.DataFrame(rows)
     manifest_path = out_path / "complex_manifest.tsv"

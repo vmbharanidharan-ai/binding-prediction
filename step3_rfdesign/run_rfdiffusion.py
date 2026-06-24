@@ -68,12 +68,24 @@ def _resolve_weights_dir(rfdiff_root: Path, step_cfg: dict) -> str:
     )
 
 
-def _quote_hydra_value(value: str) -> str:
-    """Quote Hydra override values that contain spaces or brackets."""
-    if any(ch in value for ch in (" ", "[", "]", ",")):
-        escaped = value.replace("'", "\\'")
-        return f"'{escaped}'"
-    return value
+def _format_contig_override(contig_map: str) -> str:
+    """Hydra list override for contigmap.contigs (must not be shell-quoted).
+
+    RFdiffusion reads ``self.contigs[0]`` as a space-separated contig string.
+    Quoting the bracket list makes Hydra pass a string, so ``contigs[0]`` is ``'['``.
+    """
+    contig_body = str(contig_map).strip()
+    if contig_body.startswith("[") and contig_body.endswith("]"):
+        contig_body = contig_body[1:-1].strip()
+    return f"contigmap.contigs=[{contig_body}]"
+
+
+def _format_hotspot_override(hotspot_res: str) -> str:
+    """Hydra list override for ppi.hotspot_res (comma-separated, no extra quotes)."""
+    tokens = [t.strip() for t in str(hotspot_res).split(",") if t.strip()]
+    if not tokens:
+        raise ValueError("hotspot_res is empty")
+    return f"ppi.hotspot_res=[{','.join(tokens)}]"
 
 
 def _resolve_ppi_checkpoint(
@@ -113,6 +125,14 @@ def _validate_design_inputs(
         )
 
 
+def _resolve_schedule_cache_dir(step_cfg: dict) -> Path:
+    """Writable directory for RFdiffusion IGSO3 schedule caches (container FS is read-only)."""
+    raw = str(step_cfg.get("schedule_cache_dir", "${NEO_BINDER_WORK_ROOT:-./work}/.rfdiffusion_schedules"))
+    path = Path(os.path.expandvars(raw.strip()))
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def _hydra_overrides(
     row,
     job_out: Path,
@@ -122,22 +142,25 @@ def _hydra_overrides(
     step_cfg: dict,
 ) -> list:
     """Build Hydra CLI overrides; values with spaces must stay single shell tokens."""
-    contig_value = f"[{row['contig_map']}]"
+    schedule_dir = _resolve_schedule_cache_dir(step_cfg)
     overrides = [
         f"inference.input_pdb={row['pdb_path']}",
         f"inference.output_prefix={job_out / design_id}",
-        f"contigmap.contigs={_quote_hydra_value(contig_value)}",
+        _format_contig_override(row["contig_map"]),
         f"diffuser.T={step_cfg['diffusion_steps']}",
         f"inference.num_designs={step_cfg['num_designs_per_structure']}",
         f"inference.model_directory_path={weights_dir}",
+        f"inference.schedule_directory_path={schedule_dir}",
+        # /opt/rfdiffusion is read-only in the container; Hydra defaults to outputs/ there.
+        f"hydra.run.dir={job_out / '.hydra'}",
+        "hydra.job.chdir=false",
     ]
     if not step_cfg.get("write_trajectory", False):
         overrides.append("inference.write_trajectory=false")
 
     hotspot_res = str(row.get("hotspot_res", "") or "").strip()
     if hotspot_res:
-        hotspot_value = f"[{hotspot_res}]"
-        overrides.append(f"ppi.hotspot_res={_quote_hydra_value(hotspot_value)}")
+        overrides.append(_format_hotspot_override(hotspot_res))
         overrides.append(
             f"inference.ckpt_override_path={_resolve_ppi_checkpoint(step_cfg, weights_dir, host_weights_dir)}"
         )
@@ -320,11 +343,16 @@ def run_rfdiffusion(
     for design_dir in out_root.iterdir():
         if not design_dir.is_dir():
             continue
-        pdbs = list(design_dir.glob("*.pdb"))
+        pdbs = sorted(
+            p
+            for p in design_dir.glob("*.pdb")
+            if p.stem.rsplit("_", 1)[-1].isdigit()
+        )
         fastas = list(design_dir.glob("*.fa")) + list(design_dir.glob("*.fasta"))
         for pdb in pdbs:
             binder_rows.append(
                 {
+                    "backbone_id": pdb.stem,
                     "design_id": design_dir.name,
                     "backbone_pdb": str(pdb),
                     "sequence_fasta": str(fastas[0]) if fastas else "",

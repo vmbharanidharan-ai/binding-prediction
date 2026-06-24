@@ -31,12 +31,16 @@ def load_designed_binder_map(config: Mapping[str, object]) -> dict[str, dict[str
         seq = str(row.get("binder_sequence", "") or "").strip()
         if not seq:
             continue
-        out[str(row["design_id"])] = {
+        entry = {
             "binder_sequence": seq,
             "sequence_fasta": str(row.get("sequence_fasta", "") or ""),
             "mpnn_score": str(row.get("mpnn_score", "") or ""),
             "binder_chain": str(row.get("binder_chain", "") or ""),
+            "design_id": str(row.get("design_id", "") or ""),
         }
+        key = str(row.get("backbone_id") or row.get("design_id", ""))
+        if key:
+            out[key] = entry
     return out
 
 
@@ -52,8 +56,13 @@ def resolve_binder_sequence(
     Returns (sequence, source) where source is mpnn|fasta|placeholder.
     """
     mapping = designed_map if designed_map is not None else load_designed_binder_map(config)
-    if str(design_id) in mapping:
-        return mapping[str(design_id)]["binder_sequence"], "mpnn"
+    lookup_keys = [
+        str(binder_row.get("backbone_id", "") or ""),
+        str(design_id),
+    ]
+    for key in lookup_keys:
+        if key and key in mapping:
+            return mapping[key]["binder_sequence"], "mpnn"
 
     fasta_path = str(binder_row.get("sequence_fasta", "") or "")
     if fasta_path and Path(fasta_path).exists():

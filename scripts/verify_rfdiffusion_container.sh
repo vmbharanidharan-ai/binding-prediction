@@ -53,6 +53,21 @@ if not torch.cuda.is_available():
 g = dgl.graph(([0, 1], [1, 2])).to("cuda")
 src, dst = g.edges()
 print(f"DGL CUDA graph.edges() OK ({len(src)} edges)")
+
+major, minor = torch.cuda.get_device_capability()
+name = torch.cuda.get_device_name(torch.cuda.current_device())
+print(f"GPU {name} compute capability {major}.{minor}")
+if major > 8 or (major == 8 and minor >= 9):
+    raise SystemExit(
+        f"GPU {name} (sm_{major}{minor}) incompatible with torch 1.9.1+cu111; "
+        "use volta-gpu (V100) or a100-gpu for Step 3"
+    )
+
+from e3nn import o3
+
+x = torch.randn(16, 3, device="cuda")
+_ = o3.spherical_harmonics(2, x, normalize=True)
+print("e3nn spherical_harmonics NVRTC OK")
 PYEOF
 
 RFDIFFUSION_ROOT="${RFDIFFUSION_ROOT:-${PROJECT_ROOT}/RFdiffusion}"

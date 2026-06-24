@@ -44,7 +44,8 @@ def run_inference(
     X = df[feature_cols].fillna(0).values
     scores = ranker.predict(X)
 
-    result = df[["peptide", "allele"]].copy()
+    id_cols = [c for c in ("peptide", "allele", "backbone_id", "complex_id", "design_id") if c in df.columns]
+    result = df[id_cols].copy()
     if "gene" in df.columns:
         result["gene"] = df["gene"]
     if "junction" in df.columns:

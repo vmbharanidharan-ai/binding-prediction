@@ -203,9 +203,19 @@ def engineer_features(
 
     if binder_scores_tsv and Path(binder_scores_tsv).exists():
         binder = pd.read_csv(binder_scores_tsv, sep="\t")
-        binder_best = binder.groupby("peptide").first().reset_index()
-        binder_cols = [c for c in binder.columns if c.startswith("binder_")]
-        df = df.merge(binder_best[["peptide"] + binder_cols], on="peptide", how="left")
+        binder_cols = [
+            c for c in binder.columns
+            if c.startswith("binder_") or c in ("complex_id", "backbone_id", "mpnn_score")
+        ]
+        merge_on = ["backbone_id"] if "backbone_id" in binder.columns and "backbone_id" in df.columns else ["peptide"]
+        if merge_on == ["backbone_id"] and df["backbone_id"].isna().all():
+            merge_on = ["peptide"]
+        if merge_on == ["peptide"]:
+            # One input row per peptide → expand to all backbone variants for ranking.
+            df = df.merge(binder[["peptide"] + binder_cols], on="peptide", how="inner")
+            logger.info(f"Merged {len(df)} binder variant row(s) from Step 4 scores")
+        else:
+            df = df.merge(binder[merge_on + binder_cols], on=merge_on, how="left")
 
     if esm2_tsv and Path(esm2_tsv).exists():
         esm2_df = pd.read_csv(esm2_tsv, sep="\t")
