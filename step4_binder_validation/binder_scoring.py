@@ -88,9 +88,13 @@ def score_binder_complexes(
         rows.append(
             {
                 "complex_id": complex_id,
+                "backbone_id": entry.get("backbone_id", ""),
                 "design_id": entry["design_id"],
                 "peptide": entry["peptide"],
                 "allele": entry["allele"],
+                "binder_sequence": entry.get("binder_sequence", ""),
+                "mpnn_score": entry.get("mpnn_score", ""),
+                "binder_backbone": entry.get("binder_backbone", ""),
                 "pdb_path": str(best_pdb),
                 "binder_interface_plddt": plddt,
                 "binder_interface_pae": pae,
