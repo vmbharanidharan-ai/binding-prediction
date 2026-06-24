@@ -19,14 +19,15 @@ A modular computational immunoinformatics pipeline for prioritizing neoantigen p
 5. [Technical stack](#technical-stack)
 6. [Key contributions](#key-contributions)
 7. [RFdiffusion on HPC (Apptainer)](#rfdiffusion-on-hpc-apptainer)
-8. [Quick start](#quick-start-longleaf)
-9. [Usage](#usage)
-10. [Pipeline details](#pipeline-details)
-11. [Input, outputs, and scoring](#input-format)
-12. [Configuration](#configuration)
-13. [Repository and work directories](#repository-layout)
-14. [Future work](#future-work)
-15. [Development and troubleshooting](#development-and-troubleshooting)
+8. [Quick start (Longleaf)](#quick-start-longleaf)
+9. [Reproducing in a new directory](#reproducing-in-a-new-directory)
+10. [Usage](#usage)
+11. [Pipeline details](#pipeline-details)
+12. [Input, outputs, and scoring](#input-format)
+13. [Configuration](#configuration)
+14. [Repository and work directories](#repository-layout)
+15. [Future work](#future-work)
+16. [Development and troubleshooting](#development-and-troubleshooting)
 
 ---
 
@@ -237,36 +238,46 @@ Full build instructions: [`containers/APPTAINER_BUILD_INSTRUCTIONS.md`](containe
 
 ## Quick start (Longleaf)
 
-### 1. Environment
+### 1. One-time setup (per user)
 
 ```bash
-conda env create -f environment.yml
+conda env create -f environment.yml -n neo_binder
 conda activate neo_binder
 ```
 
-### 2. Set paths
+### 2. First project — full tool install
 
-Large outputs belong on `/work`, not `$HOME`:
+Pick a project root on `/work` (not `$HOME`). All large outputs and external tools live here:
+
+```bash
+export PROJECT_ROOT=/work/users/$USER/minibinder_prediction
+export NEO_BINDER_WORK_ROOT=$PROJECT_ROOT/work
+mkdir -p "$PROJECT_ROOT"
+cd "$PROJECT_ROOT"
+
+git clone https://github.com/vmbharanidharan-ai/binding-prediction.git
+cd binding-prediction
+
+bash scripts/prefetch_colabfold_weights.sh          # ColabFold (Steps 1, 4)
+bash scripts/setup_colabfold_longleaf.sh
+bash scripts/setup_rfdiffusion_longleaf.sh          # clone RFdiffusion + weights
+sbatch slurm/build_rfdiffusion_container.sbatch     # build rfdiffusion.sif (~40 min)
+bash scripts/setup_proteinmpnn_longleaf.sh          # ProteinMPNN (Step 3.5)
+```
+
+After this, `$PROJECT_ROOT` contains `rfdiffusion.sif`, `RFdiffusion/`, `ProteinMPNN/`, `alphafoldenv/`, and `colabfold_params/`. You can **reuse these across cohorts** — see [Reproducing in a new directory](#reproducing-in-a-new-directory).
+
+### 3. Set paths and run
 
 ```bash
 export PROJECT_ROOT=/work/users/$USER/minibinder_prediction
 export NEO_BINDER_WORK_ROOT=$PROJECT_ROOT/work
 cd $PROJECT_ROOT/binding-prediction
-```
 
-### 3. One-time external tool setup
+# Single pair (interactive) — saves input for later steps
+./slurm/run_pair.sh -i --step 1
 
-```bash
-bash scripts/prefetch_colabfold_weights.sh          # ColabFold (Steps 1, 4)
-bash scripts/setup_colabfold_longleaf.sh
-bash scripts/setup_rfdiffusion_longleaf.sh          # clone RFdiffusion + weights
-sbatch slurm/build_rfdiffusion_container.sbatch     # build rfdiffusion.sif
-bash scripts/setup_proteinmpnn_longleaf.sh          # ProteinMPNN (Step 3.5)
-```
-
-### 4. Prepare input and run
-
-```bash
+# Or point at a cohort TSV
 export INPUT_TSV=data/generated/your_cohort.tsv
 
 ./slurm/submit_step.sh 0      # embeddings
@@ -279,6 +290,8 @@ export INPUT_TSV=data/generated/your_cohort.tsv
 ./slurm/submit_step.sh 5      # ML ranking
 ```
 
+**Important:** `PROJECT_ROOT` or `NEO_BINDER_WORK_ROOT` must be set before every `submit_step.sh` call. If unset, jobs default to `/work/users/$USER/neo_binder` and outputs will appear in the wrong place.
+
 Monitor:
 
 ```bash
@@ -289,7 +302,111 @@ tail -f logs/step3_*.out
 
 ---
 
+## Reproducing in a new directory
+
+For each new cohort or peptide set, you do **not** need to re-download weights or rebuild the Apptainer image. Use `scripts/init_project.sh` to bootstrap a fresh project directory.
+
+### What gets created
+
+```
+NEW_PROJECT_ROOT/
+├── .env                    # source this for path exports
+├── work/                   # NEO_BINDER_WORK_ROOT (all pipeline outputs)
+├── binding-prediction/     # cloned repo
+├── rfdiffusion.sif         # symlinked from old install (if --old-root)
+├── RFdiffusion/            # symlinked
+├── ProteinMPNN/            # symlinked
+├── alphafoldenv/           # symlinked
+└── colabfold_params/       # symlinked
+```
+
+Pipeline outputs always live under `$NEO_BINDER_WORK_ROOT` (`$PROJECT_ROOT/work`), not inside the git repo.
+
+### Initialize a new project (recommended)
+
+From any checkout of this repo:
+
+```bash
+bash scripts/init_project.sh \
+  --new-root /work/users/$USER/cohort_2/minibinder_prediction \
+  --old-root /work/users/$USER/cohort_1/minibinder_prediction
+```
+
+Options:
+
+| Flag | Purpose |
+|------|---------|
+| `--new-root` | New project directory (required) |
+| `--old-root` | Symlink heavy assets from an existing install |
+| `--branch` | Git branch to checkout after clone (default: `main`) |
+
+Symlinked assets: `rfdiffusion.sif`, `RFdiffusion`, `ProteinMPNN`, `alphafoldenv`, `colabfold_params`, `.cache`.
+
+Without `--old-root`, run the [first-project tool install](#2-first-project--full-tool-install) under the new root.
+
+### Load environment and run
+
+```bash
+source /work/users/$USER/cohort_2/minibinder_prediction/.env
+cd $PROJECT_ROOT/binding-prediction
+
+# Create input (one pair)
+./slurm/run_pair.sh -p AIMDLVMMV -a HLA_A0201 --gene GENE --step 1 --make-only
+
+# Or reuse saved input from a prior interactive run
+source data/generated/current_pair.env
+
+# Submit steps in order
+./slurm/submit_step.sh 0
+./slurm/submit_step.sh 1
+# ... through 5
+```
+
+### One-liner: init + submit first step
+
+```bash
+bash scripts/run_cohort.sh \
+  --root /work/users/$USER/cohort_2/minibinder_prediction \
+  --old-root /work/users/$USER/cohort_1/minibinder_prediction \
+  --input data/generated/cohort.tsv \
+  --start-step 0 \
+  --submit
+```
+
+### Copy an existing run instead of starting fresh
+
+To resume or duplicate results, copy the `work/` directory and input TSV:
+
+```bash
+rsync -a "$OLD_PROJECT_ROOT/work/" "$NEW_PROJECT_ROOT/work/"
+rsync -a "$OLD_PROJECT_ROOT/binding-prediction/data/generated/" \
+          "$NEW_PROJECT_ROOT/binding-prediction/data/generated/"
+source "$NEW_PROJECT_ROOT/.env"
+python run_pipeline.py --from-step step4   # example resume point
+```
+
+### Key output paths (under `$NEO_BINDER_WORK_ROOT`)
+
+| Step | Main output |
+|------|-------------|
+| 3 | `step3_binders/binder_designs.tsv` + backbone PDBs |
+| 3.5 | `step3_5_sequences/designed_binders.tsv` (sequences; no new PDB) |
+| 4 | `step4_validated/binder_scores.tsv` + multimer PDBs in `step4_validated/multimer/` |
+| 5 | `step5_ranked/final_rankings.tsv` |
+
+To view the **full binder + peptide + HLA complex**, open the Step 4 multimer PDB (`binder_scores.tsv` → `pdb_path` column).
+
+---
+
 ## Usage
+
+**Environment (every session):**
+
+```bash
+source $PROJECT_ROOT/.env          # if created by init_project.sh
+conda activate neo_binder
+cd $PROJECT_ROOT/binding-prediction
+```
 
 **Submit individual steps:**
 
@@ -421,7 +538,21 @@ binding-prediction/
 ├── embeddings/                  ESM-2 / ProtT5
 ├── hla/                         IMGT allele resolution
 ├── utils/                       Shared helpers, step summaries
-└── scripts/                     HPC setup, container wrappers
+└── scripts/                     HPC setup, init_project.sh, run_cohort.sh
+```
+
+### Project root (`$PROJECT_ROOT/`)
+
+```
+├── binding-prediction/          Git repo (code, slurm/, config/)
+├── work/                        Pipeline outputs (NEO_BINDER_WORK_ROOT)
+├── rfdiffusion.sif              Apptainer image (Step 3)
+├── RFdiffusion/                 Weights + inference code
+├── ProteinMPNN/
+├── alphafoldenv/                ColabFold venv
+├── colabfold_params/            AlphaFold model weights
+├── .env                         Path exports (from init_project.sh)
+└── .cache/                      ColabFold cache (optional)
 ```
 
 ### Work directory (`$NEO_BINDER_WORK_ROOT/`)
@@ -461,7 +592,7 @@ Use `/work/users/<onyen>/`, not `$HOME`.
 
 ## Future work
 
-- **New cohorts** — point `INPUT_TSV` at any peptide–allele table; reuse `rfdiffusion.sif` across datasets
+- **New cohorts** — `bash scripts/init_project.sh --new-root ... --old-root ...`; reuse `rfdiffusion.sif` and weights across datasets
 - **Alternative structure backends** — PMGen for Step 1 (`step1.backend`)
 - **Rosetta interface scoring** — optional in Step 4 (`step4.use_rosetta`)
 - **Additional embeddings** — ProtT5 toggle in `config/config.yaml`
@@ -473,6 +604,7 @@ Use `/work/users/<onyen>/`, not `$HOME`.
 
 | Topic | Documentation |
 |-------|---------------|
+| New project bootstrap | `scripts/init_project.sh`, `scripts/run_cohort.sh` |
 | Apptainer build & rebuild | [`containers/APPTAINER_BUILD_INSTRUCTIONS.md`](containers/APPTAINER_BUILD_INSTRUCTIONS.md) |
 | Container definition | [`containers/rfdiffusion.def`](containers/rfdiffusion.def) |
 | RFdiffusion setup | `scripts/setup_rfdiffusion_longleaf.sh` |
@@ -481,7 +613,7 @@ Use `/work/users/<onyen>/`, not `$HOME`.
 | Pipeline configuration | `config/config.yaml` |
 | Per-step summaries | `python utils/step_summary.py --step <step>` |
 
-HPC notes: GPU jobs use `--qos=gpu_access` on Longleaf. ColabFold cache redirects to `/work` via `scripts/colabfold_work_paths.sh`.
+HPC notes: GPU jobs use `--qos=gpu_access` on Longleaf. ColabFold cache redirects to `/work` via `scripts/colabfold_work_paths.sh`. If pipeline outputs are missing, verify `echo $NEO_BINDER_WORK_ROOT` matches where you expect before submitting jobs.
 
 ---
 
