@@ -2,11 +2,12 @@
 # Initialize a new neo_binder project directory on Longleaf.
 #
 # Usage:
-#   bash scripts/init_project.sh --new-root /work/users/$USER/cohort_2/minibinder_prediction
-#   bash scripts/init_project.sh --new-root /path/new --old-root /path/old
+#   bash scripts/init_project.sh --new-root /work/users/$USER/cohort_2/minibinder_prediction \
+#     --old-root /work/users/$USER/cohort_1/minibinder_prediction
 #
-# Creates work/, clones binding-prediction (if needed), symlinks heavy assets,
-# and writes $NEW_ROOT/.env for path exports.
+# Creates work/, clones binding-prediction, symlinks heavy assets, and writes:
+#   $NEW_ROOT/.env          — all path exports (auto-loaded by SLURM)
+#   $NEW_ROOT/activate.sh   — one command to enter the project shell
 
 set -euo pipefail
 
@@ -14,24 +15,27 @@ NEW_ROOT=""
 OLD_ROOT=""
 GIT_BRANCH="${GIT_BRANCH:-main}"
 REPO_URL="${REPO_URL:-https://github.com/vmbharanidharan-ai/binding-prediction.git}"
+REGISTER_BASHRC=false
+PROJECT_ALIAS=""
 
 usage() {
     cat <<'EOF'
 Usage: bash scripts/init_project.sh --new-root /path/to/new/project [options]
 
 Options:
-  --new-root PATH   Project root (required). Creates work/ and binding-prediction/.
-  --old-root PATH   Symlink heavy assets from an existing installation.
-  --branch NAME     Git branch to checkout after clone (default: main).
-  -h, --help        Show this help.
+  --new-root PATH       Project root (required). Creates work/ and binding-prediction/.
+  --old-root PATH       Symlink heavy assets from an existing installation.
+  --branch NAME         Git branch to checkout after clone (default: main).
+  --alias NAME          Short name for activate alias (e.g. srsf2 → source activate.sh)
+  --register-bashrc     Append "source .../activate.sh" to ~/.bashrc.d/neo_binder_NAME.sh
+  -h, --help            Show this help.
 
-Heavy assets symlinked when --old-root is set:
-  rfdiffusion.sif, RFdiffusion, ProteinMPNN, alphafoldenv, colabfold_params, .cache
+Writes $NEW_ROOT/.env with PROJECT_ROOT, tool paths, and default INPUT_TSV.
+SLURM jobs auto-source ../.env when run from binding-prediction/ (no manual export needed).
 
 After setup:
-  source $NEW_ROOT/.env
-  cd $PROJECT_ROOT/binding-prediction
-  ./slurm/run_pair.sh -p PEPTIDE -a HLA_A0201 --gene GENE --step 1 --make-only
+  source $NEW_ROOT/activate.sh
+  python scripts/create_input.py
   ./slurm/submit_step.sh 0
 EOF
 }
@@ -41,6 +45,8 @@ while [[ $# -gt 0 ]]; do
         --new-root) NEW_ROOT="$2"; shift 2 ;;
         --old-root) OLD_ROOT="$2"; shift 2 ;;
         --branch)   GIT_BRANCH="$2"; shift 2 ;;
+        --alias)    PROJECT_ALIAS="$2"; shift 2 ;;
+        --register-bashrc) REGISTER_BASHRC=true; shift ;;
         -h|--help)  usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
     esac
@@ -51,7 +57,7 @@ if [[ -z "$NEW_ROOT" ]]; then
     exit 1
 fi
 
-NEW_ROOT="$(cd "$NEW_ROOT" 2>/dev/null && pwd || echo "$NEW_ROOT")"
+NEW_ROOT="$(mkdir -p "$NEW_ROOT" && cd "$NEW_ROOT" && pwd)"
 mkdir -p "$NEW_ROOT/work"
 
 echo "=== Initializing neo_binder project ==="
@@ -74,6 +80,7 @@ if [[ ! -d "$REPO_DIR/.git" ]]; then
 else
     echo "binding-prediction already present — skipping clone"
 fi
+mkdir -p "$REPO_DIR/data/generated"
 
 ASSETS=(rfdiffusion.sif RFdiffusion ProteinMPNN alphafoldenv colabfold_params .cache)
 
@@ -101,21 +108,78 @@ else
     echo "  See README.md → Quick start (Longleaf) → one-time external tool setup"
 fi
 
-cat > "$NEW_ROOT/.env" <<'EOF'
-# Source before submitting jobs: source $PROJECT_ROOT/../.env  (from binding-prediction/)
-# or: source /work/users/$USER/.../minibinder_prediction/.env
-export PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export NEO_BINDER_WORK_ROOT="$PROJECT_ROOT/work"
-export INPUT_TSV="${INPUT_TSV:-$PROJECT_ROOT/binding-prediction/data/step5_input.tsv}"
+INPUT_DEFAULT="$REPO_DIR/data/generated/input.tsv"
+
+# Semi-permanent cluster paths — auto-sourced by slurm/common_paths.sh via ../.env
+{
+    echo "# Neo binder project environment — source: source $NEW_ROOT/activate.sh"
+    echo "export PROJECT_ROOT=\"$NEW_ROOT\""
+    echo "export NEO_BINDER_WORK_ROOT=\"\$PROJECT_ROOT/work\""
+    echo "export INPUT_TSV=\"\${INPUT_TSV:-$INPUT_DEFAULT}\""
+    echo "export PMGEN_ROOT=\"\$PROJECT_ROOT/PMGen\""
+    echo "export RFDIFFUSION_ROOT=\"\$PROJECT_ROOT/RFdiffusion\""
+    echo "export RFDIFFUSION_CONTAINER=\"\$PROJECT_ROOT/rfdiffusion.sif\""
+    echo "export PROTEINMPNN_ROOT=\"\$PROJECT_ROOT/ProteinMPNN\""
+    echo "export ALPHAFOLD_ENV=\"\$PROJECT_ROOT/alphafoldenv\""
+    echo "export COLABFOLD_BIN=\"\$ALPHAFOLD_ENV/bin/colabfold_batch\""
+    echo "export COLABFOLD_DATA_DIR=\"\$PROJECT_ROOT/colabfold_params\""
+    echo "export COLABFOLD_PARAMS_DIR=\"\$PROJECT_ROOT/colabfold_params\""
+    echo "export XDG_CACHE_HOME=\"\$PROJECT_ROOT/.cache\""
+    if [[ -n "$OLD_ROOT" ]]; then
+        echo "export OLD_ROOT=\"$OLD_ROOT\""
+    fi
+} > "$NEW_ROOT/.env"
+
+cat > "$NEW_ROOT/activate.sh" <<EOF
+#!/bin/bash
+# Enter this neo_binder project (paths + repo directory).
+set -a
+source "\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/.env"
+set +a
+if [[ -f "\$(conda info --base 2>/dev/null)/etc/profile.d/conda.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "\$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate neo_binder 2>/dev/null || true
+fi
+cd "\$PROJECT_ROOT/binding-prediction"
+echo "PROJECT_ROOT=\$PROJECT_ROOT"
+echo "NEO_BINDER_WORK_ROOT=\$NEO_BINDER_WORK_ROOT"
+echo "INPUT_TSV=\$INPUT_TSV"
+echo "cwd: \$(pwd)"
 EOF
+chmod +x "$NEW_ROOT/activate.sh"
+
+if [[ -z "$PROJECT_ALIAS" ]]; then
+    PROJECT_ALIAS="$(basename "$NEW_ROOT")"
+fi
+
+if [[ "$REGISTER_BASHRC" == true ]]; then
+    mkdir -p "$HOME/.bashrc.d"
+    _rc_snippet="$HOME/.bashrc.d/neo_binder_${PROJECT_ALIAS}.sh"
+    echo "alias neo_${PROJECT_ALIAS}='source \"$NEW_ROOT/activate.sh\"'" > "$_rc_snippet"
+    if ! grep -q 'bashrc.d/neo_binder_' "$HOME/.bashrc" 2>/dev/null; then
+        cat >> "$HOME/.bashrc" <<'BASHRC'
+
+# Neo binder project aliases (optional; created by init_project.sh --register-bashrc)
+for _neo_env in "$HOME"/.bashrc.d/neo_binder_*.sh; do
+    [[ -f "$_neo_env" ]] && source "$_neo_env"
+done
+unset _neo_env
+BASHRC
+    fi
+    echo "Registered alias: neo_${PROJECT_ALIAS}  →  source $NEW_ROOT/activate.sh"
+fi
 
 echo ""
 echo "=== Setup complete ==="
 echo ""
-echo "Next steps:"
-echo "  source $NEW_ROOT/.env"
-echo "  cd \$PROJECT_ROOT/binding-prediction"
-echo "  ./slurm/run_pair.sh -p PEPTIDE -a HLA_A0201 --gene GENE --step 1 --make-only"
-echo "  ./slurm/submit_step.sh 0   # then 1, 2, 3, 3.5, 4, 5"
+echo "  source $NEW_ROOT/activate.sh"
+echo "  python scripts/create_input.py"
+echo "  ./slurm/submit_step.sh 0"
+echo ""
+echo "Paths in $NEW_ROOT/.env are auto-loaded by ./slurm/submit_step.sh and SLURM jobs."
+if [[ "$REGISTER_BASHRC" != true ]]; then
+    echo "Optional: re-run with --register-bashrc --alias $PROJECT_ALIAS for login auto-activation."
+fi
 echo ""
 echo "One-time per user (if not done): conda env create -f environment.yml -n neo_binder"

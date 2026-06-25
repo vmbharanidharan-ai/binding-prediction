@@ -44,12 +44,21 @@ esac
 
 mkdir -p logs
 
-# Reuse input TSV saved from first interactive run
+# Auto-load $PROJECT_ROOT/.env when repo lives at $PROJECT_ROOT/binding-prediction
+# shellcheck source=scripts/project_env.sh
+source "$REPO_ROOT/scripts/project_env.sh"
+
+# Reuse input TSV saved from create_input.py / make_input.py
 if [[ -z "${INPUT_TSV:-}" && -f data/generated/current_pair.env ]]; then
     # shellcheck source=/dev/null
     source data/generated/current_pair.env
 fi
 export INPUT_TSV="${INPUT_TSV:-data/step5_input.tsv}"
+# Resolve relative INPUT_TSV against repo root
+if [[ "$INPUT_TSV" != /* ]]; then
+    INPUT_TSV="$REPO_ROOT/$INPUT_TSV"
+    export INPUT_TSV
+fi
 export PROJECT_ROOT="${PROJECT_ROOT:-}"
 if [[ -n "$PROJECT_ROOT" && -z "${NEO_BINDER_WORK_ROOT:-}" ]]; then
     export NEO_BINDER_WORK_ROOT="$PROJECT_ROOT/work"

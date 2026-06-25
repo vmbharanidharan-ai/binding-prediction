@@ -3,6 +3,10 @@
 
 set -euo pipefail
 
+_SLURM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/project_env.sh
+source "${_SLURM_DIR}/../scripts/project_env.sh"
+
 export PROJECT_ROOT="${PROJECT_ROOT:-}"
 if [[ -n "$PROJECT_ROOT" && -z "${NEO_BINDER_WORK_ROOT:-}" ]]; then
     export NEO_BINDER_WORK_ROOT="$PROJECT_ROOT/work"

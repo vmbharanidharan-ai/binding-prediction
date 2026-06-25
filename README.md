@@ -290,7 +290,7 @@ export INPUT_TSV=data/generated/your_cohort.tsv
 ./slurm/submit_step.sh 5      # ML ranking
 ```
 
-**Important:** `PROJECT_ROOT` or `NEO_BINDER_WORK_ROOT` must be set before every `submit_step.sh` call. If unset, jobs default to `/work/users/$USER/neo_binder` and outputs will appear in the wrong place.
+**Important:** With the standard layout (`$PROJECT_ROOT/binding-prediction/`), paths load automatically from `$PROJECT_ROOT/.env`. Run `source $PROJECT_ROOT/activate.sh` once per login session, or use `--register-bashrc` during `init_project.sh`.
 
 Monitor:
 
@@ -310,7 +310,8 @@ For each new cohort or peptide set, you do **not** need to re-download weights o
 
 ```
 NEW_PROJECT_ROOT/
-├── .env                    # source this for path exports
+├── .env                    # all path exports (auto-loaded by SLURM)
+├── activate.sh             # source this to enter the project
 ├── work/                   # NEO_BINDER_WORK_ROOT (all pipeline outputs)
 ├── binding-prediction/     # cloned repo
 ├── rfdiffusion.sif         # symlinked from old install (if --old-root)
@@ -339,6 +340,8 @@ Options:
 | `--new-root` | New project directory (required) |
 | `--old-root` | Symlink heavy assets from an existing install |
 | `--branch` | Git branch to checkout after clone (default: `main`) |
+| `--alias` | Short name for shell alias `neo_<alias>` |
+| `--register-bashrc` | Add `neo_<alias>` alias to `~/.bashrc.d/` on login |
 
 Symlinked assets: `rfdiffusion.sif`, `RFdiffusion`, `ProteinMPNN`, `alphafoldenv`, `colabfold_params`, `.cache`.
 
@@ -347,19 +350,26 @@ Without `--old-root`, run the [first-project tool install](#2-first-project--ful
 ### Load environment and run
 
 ```bash
-source /work/users/$USER/cohort_2/minibinder_prediction/.env
-cd $PROJECT_ROOT/binding-prediction
+source /work/users/$USER/cohort_2/minibinder_prediction/activate.sh
+# Sets PROJECT_ROOT, NEO_BINDER_WORK_ROOT, tool paths, and cd's into binding-prediction
 
-# Create input (one pair)
-./slurm/run_pair.sh -p AIMDLVMMV -a HLA_A0201 --gene GENE --step 1 --make-only
+# Create cohort input (interactive, multiple peptides)
+python scripts/create_input.py
+# Writes data/generated/input.tsv and data/generated/current_pair.env
 
-# Or reuse saved input from a prior interactive run
-source data/generated/current_pair.env
-
-# Submit steps in order
+# Submit steps (paths auto-loaded from ../.env — no manual export needed)
 ./slurm/submit_step.sh 0
 ./slurm/submit_step.sh 1
 # ... through 5
+```
+
+**Semi-permanent paths:** `init_project.sh` writes `$PROJECT_ROOT/.env` with all tool and work paths. `slurm/submit_step.sh` and SLURM jobs **auto-source** `../.env` when the repo lives at `$PROJECT_ROOT/binding-prediction/`.
+
+Optional login alias (once per project):
+
+```bash
+bash scripts/init_project.sh --new-root ... --old-root ... --register-bashrc --alias srsf2
+# Then on future logins: neo_srsf2
 ```
 
 ### One-liner: init + submit first step
@@ -381,7 +391,7 @@ To resume or duplicate results, copy the `work/` directory and input TSV:
 rsync -a "$OLD_PROJECT_ROOT/work/" "$NEW_PROJECT_ROOT/work/"
 rsync -a "$OLD_PROJECT_ROOT/binding-prediction/data/generated/" \
           "$NEW_PROJECT_ROOT/binding-prediction/data/generated/"
-source "$NEW_PROJECT_ROOT/.env"
+source "$NEW_PROJECT_ROOT/activate.sh"
 python run_pipeline.py --from-step step4   # example resume point
 ```
 
@@ -456,7 +466,18 @@ XGBoost `rank:pairwise` with gene-level split. See [ML features](#ml-features-st
 
 ## Input format
 
-`data/step5_input.tsv` — one row per peptide–allele pair:
+Create a cohort TSV interactively:
+
+```bash
+source $PROJECT_ROOT/activate.sh
+python scripts/create_input.py
+# default output: data/generated/input.tsv
+# also writes data/generated/current_pair.env (INPUT_TSV for submit_step.sh)
+```
+
+Or use the single-pair helper: `python scripts/make_input.py -p PEPTIDE -a HLA_A0201 ...`
+
+`data/step5_input.tsv` is an example multi-row template. Required columns:
 
 | Column | Description |
 |--------|-------------|
@@ -538,7 +559,7 @@ binding-prediction/
 ├── embeddings/                  ESM-2 / ProtT5
 ├── hla/                         IMGT allele resolution
 ├── utils/                       Shared helpers, step summaries
-└── scripts/                     HPC setup, init_project.sh, run_cohort.sh
+└── scripts/                     HPC setup, init_project.sh, create_input.py, project_env.sh
 ```
 
 ### Project root (`$PROJECT_ROOT/`)
@@ -604,7 +625,7 @@ Use `/work/users/<onyen>/`, not `$HOME`.
 
 | Topic | Documentation |
 |-------|---------------|
-| New project bootstrap | `scripts/init_project.sh`, `scripts/run_cohort.sh` |
+| New project bootstrap | `scripts/init_project.sh`, `scripts/activate.sh`, `scripts/create_input.py` |
 | Apptainer build & rebuild | [`containers/APPTAINER_BUILD_INSTRUCTIONS.md`](containers/APPTAINER_BUILD_INSTRUCTIONS.md) |
 | Container definition | [`containers/rfdiffusion.def`](containers/rfdiffusion.def) |
 | RFdiffusion setup | `scripts/setup_rfdiffusion_longleaf.sh` |
@@ -613,7 +634,7 @@ Use `/work/users/<onyen>/`, not `$HOME`.
 | Pipeline configuration | `config/config.yaml` |
 | Per-step summaries | `python utils/step_summary.py --step <step>` |
 
-HPC notes: GPU jobs use `--qos=gpu_access` on Longleaf. ColabFold cache redirects to `/work` via `scripts/colabfold_work_paths.sh`. If pipeline outputs are missing, verify `echo $NEO_BINDER_WORK_ROOT` matches where you expect before submitting jobs.
+HPC notes: GPU jobs use `--qos=gpu_access` on Longleaf. Steps 1 and 4 request **A100 only** (avoids ColabFold JAX errors on V100). ColabFold cache redirects to `/work` via `scripts/colabfold_work_paths.sh`.
 
 ---
 

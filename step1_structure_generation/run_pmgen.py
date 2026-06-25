@@ -1,6 +1,8 @@
 """Run PMGen structure prediction via the official PMGen CLI (Step 1 backend)."""
 
 from __future__ import annotations
+
+import argparse
 import os
 import shlex
 import shutil
